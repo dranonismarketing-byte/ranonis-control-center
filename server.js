@@ -33,14 +33,36 @@ const CLIENTS = [
 ];
 
 const CLIENT_IDS = new Set(CLIENTS.map((c) => c.id));
-const VALID_STATUSES = new Set(['inbox', 'cooking', 'waiting', 'done']);
 
-const STATUS_MAP = {
-  queued: 'inbox',
-  in_progress: 'cooking',
-  inbox: 'inbox',
-  cooking: 'cooking',
-  waiting: 'waiting',
+const PIPELINE_STAGES = [
+  'research',
+  'copywriting',
+  'approve_copy',
+  'static_production',
+  'approve_statics',
+  'drive_upload',
+  'done',
+];
+const VALID_STAGES = new Set(PIPELINE_STAGES);
+
+/** Legacy Kanban status → pipeline stage */
+const STATUS_TO_STAGE = {
+  queued: 'research',
+  inbox: 'research',
+  in_progress: 'copywriting',
+  cooking: 'copywriting',
+  waiting: 'approve_copy',
+  done: 'done',
+};
+
+/** Soft reverse map for any consumer still reading status */
+const STAGE_TO_STATUS = {
+  research: 'inbox',
+  copywriting: 'cooking',
+  approve_copy: 'waiting',
+  static_production: 'cooking',
+  approve_statics: 'waiting',
+  drive_upload: 'cooking',
   done: 'done',
 };
 
@@ -61,44 +83,89 @@ function writeJson(file, data) {
   fs.renameSync(tmp, file);
 }
 
-function normalizeStatus(status) {
-  const key = String(status || 'inbox').toLowerCase();
-  return STATUS_MAP[key] || 'inbox';
+function normalizeStage(raw, fallbackStatus) {
+  if (raw != null && String(raw).trim()) {
+    const key = String(raw).trim().toLowerCase();
+    if (VALID_STAGES.has(key)) return key;
+    if (STATUS_TO_STAGE[key]) return STATUS_TO_STAGE[key];
+  }
+  if (fallbackStatus != null) {
+    const s = String(fallbackStatus).trim().toLowerCase();
+    if (VALID_STAGES.has(s)) return s;
+    if (STATUS_TO_STAGE[s]) return STATUS_TO_STAGE[s];
+  }
+  return 'research';
+}
+
+function statusFromStage(stage) {
+  return STAGE_TO_STATUS[stage] || 'inbox';
+}
+
+function publicTask(t) {
+  const stage = normalizeStage(t.stage, t.status);
+  return {
+    ...t,
+    stage,
+    status: statusFromStage(stage),
+  };
 }
 
 function migrateTasksOnce() {
   if (!fs.existsSync(TASKS_FILE)) {
-    writeJson(TASKS_FILE, { tasks: [], migratedAt: new Date().toISOString() });
+    writeJson(TASKS_FILE, { tasks: [], migratedV2: true, migratedPipeline: true, migratedAt: new Date().toISOString() });
     return;
   }
   const data = readJson(TASKS_FILE, { tasks: [] });
-  if (data.migratedV2) return;
 
-  const tasks = (data.tasks || [])
-    .filter((t) => !t.example)
-    .map((t) => {
-      const status = normalizeStatus(t.status);
-      return {
-        id: t.id || uuidv4(),
-        title: String(t.title || '').trim() || 'Untitled',
-        brief: String(t.brief || '').trim(),
-        clientId: CLIENT_IDS.has(t.clientId) ? t.clientId : 'my-plate',
-        assignee: t.assignee ? String(t.assignee) : 'cos',
-        status,
-        result: t.result != null ? String(t.result) : '',
-        resultLinks: Array.isArray(t.resultLinks) ? t.resultLinks.map(String) : [],
-        progress: t.progress != null ? String(t.progress) : '',
-        priority: t.priority || 'medium',
-        createdAt: t.createdAt || new Date().toISOString(),
-        updatedAt: t.updatedAt || t.createdAt || new Date().toISOString(),
-        completedAt: status === 'done' ? (t.completedAt || t.updatedAt || new Date().toISOString()) : null,
-      };
+  if (!data.migratedV2) {
+    const tasks = (data.tasks || [])
+      .filter((t) => !t.example)
+      .map((t) => {
+        const stage = normalizeStage(t.stage, t.status);
+        return {
+          id: t.id || uuidv4(),
+          title: String(t.title || '').trim() || 'Untitled',
+          brief: String(t.brief || '').trim(),
+          clientId: CLIENT_IDS.has(t.clientId) ? t.clientId : 'my-plate',
+          assignee: t.assignee ? String(t.assignee) : 'cos',
+          stage,
+          status: statusFromStage(stage),
+          result: t.result != null ? String(t.result) : '',
+          resultLinks: Array.isArray(t.resultLinks) ? t.resultLinks.map(String) : [],
+          progress: t.progress != null ? String(t.progress) : '',
+          priority: t.priority || 'medium',
+          createdAt: t.createdAt || new Date().toISOString(),
+          updatedAt: t.updatedAt || t.createdAt || new Date().toISOString(),
+          completedAt: stage === 'done' ? (t.completedAt || t.updatedAt || new Date().toISOString()) : null,
+        };
+      });
+
+    writeJson(TASKS_FILE, {
+      tasks,
+      migratedV2: true,
+      migratedPipeline: true,
+      migratedAt: new Date().toISOString(),
     });
+    return;
+  }
+
+  if (data.migratedPipeline) return;
+
+  const tasks = (data.tasks || []).map((t) => {
+    const stage = normalizeStage(t.stage, t.status);
+    return {
+      ...t,
+      stage,
+      status: statusFromStage(stage),
+      completedAt: stage === 'done' ? (t.completedAt || t.updatedAt || new Date().toISOString()) : null,
+    };
+  });
 
   writeJson(TASKS_FILE, {
+    ...data,
     tasks,
-    migratedV2: true,
-    migratedAt: new Date().toISOString(),
+    migratedPipeline: true,
+    migratedPipelineAt: new Date().toISOString(),
   });
 }
 
@@ -195,8 +262,9 @@ function ensureLockedBoardCards() {
       clientId: 'impossible-training',
       assignee: 'cos',
       priority: 'high',
+      stage: 'approve_copy',
       status: 'waiting',
-      progress: 'Lines locked with Donatas. Waiting on 10 static creatives (external AI).',
+      progress: 'Lines locked with Donatas. Waiting on copy approval, then 10 static creatives.',
       result,
       resultLinks: [],
       example: false,
@@ -206,12 +274,24 @@ function ensureLockedBoardCards() {
     });
     taskData.tasks = tasks;
     writeJson(TASKS_FILE, taskData);
+  } else {
+    // Ensure existing locked card has pipeline stage
+    const idx = tasks.findIndex((t) => t.id === LOCKED_PT_LINES_ID);
+    if (idx >= 0) {
+      const t = tasks[idx];
+      if (!t.stage || !VALID_STAGES.has(t.stage)) {
+        t.stage = normalizeStage(t.stage, t.status || 'waiting');
+        t.status = statusFromStage(t.stage);
+        taskData.tasks = tasks;
+        writeJson(TASKS_FILE, taskData);
+      }
+    }
   }
 
   const chatData = readJson(CHAT_FILE, { threads: {} });
   if (!chatData.threads) chatData.threads = {};
   const note =
-    'Board sync: locked 10 PT house-permission static lines are on Impossible Training → Waiting on you. Chat auto-acks; I poll and reply from CoS. Deep work still fine in Grok Bot — I will mirror decisions here.';
+    'Board sync: locked 10 PT house-permission static lines are on Impossible Training → Approve copy (Needs you). Chat auto-acks; I poll and reply from CoS. Deep work still fine in Grok Bot — I will mirror decisions here.';
   for (const key of ['cos', 'impossible-training']) {
     if (!chatData.threads[key] || !Array.isArray(chatData.threads[key].messages)) {
       chatData.threads[key] = { messages: [] };
@@ -325,6 +405,7 @@ router.get('/api/health', (_req, res) => {
     ok: true,
     service: 'ranonis-control-center',
     basePath: BASE_PATH || '/',
+    stages: PIPELINE_STAGES,
     time: new Date().toISOString(),
   });
 });
@@ -416,23 +497,32 @@ router.post('/api/chat/reply', requireApiAccess, (req, res) => {
 
 router.get('/api/tasks', requireApiAccess, (req, res) => {
   const data = readTasks();
-  let tasks = data.tasks || [];
+  let tasks = (data.tasks || []).map(publicTask);
+  const stage = req.query.stage;
   const status = req.query.status;
   const clientId = req.query.clientId;
 
-  if (status) {
-    const wanted = String(status)
+  if (stage) {
+    const wanted = String(stage)
       .split(',')
-      .map((s) => normalizeStatus(s.trim()))
+      .map((s) => normalizeStage(s.trim()))
       .filter(Boolean);
-    tasks = tasks.filter((t) => wanted.includes(normalizeStatus(t.status)));
+    tasks = tasks.filter((t) => wanted.includes(t.stage));
+  } else if (status) {
+    // Legacy filter: expand old Kanban status to all stages that reverse-map to it
+    const wantedStatuses = String(status)
+      .split(',')
+      .map((s) => String(s).trim().toLowerCase())
+      .filter(Boolean)
+      .map((s) => STATUS_TO_STAGE[s] ? statusFromStage(STATUS_TO_STAGE[s]) : (STAGE_TO_STATUS[s] || s));
+    tasks = tasks.filter((t) => wantedStatuses.includes(t.status) || wantedStatuses.includes(statusFromStage(t.stage)));
   }
 
   if (clientId && clientId !== 'my-plate') {
     tasks = tasks.filter((t) => t.clientId === clientId);
   }
 
-  res.json({ tasks });
+  res.json({ tasks, stages: PIPELINE_STAGES });
 });
 
 router.post('/api/tasks', requireApiAccess, (req, res) => {
@@ -446,9 +536,16 @@ router.post('/api/tasks', requireApiAccess, (req, res) => {
     return res.status(400).json({ error: 'unknown clientId' });
   }
 
-  let status = body.status != null ? normalizeStatus(body.status) : 'inbox';
-  if (!VALID_STATUSES.has(status)) {
-    return res.status(400).json({ error: 'status must be inbox|cooking|waiting|done' });
+  let stage = 'research';
+  if (body.stage != null) {
+    stage = normalizeStage(body.stage);
+  } else if (body.status != null) {
+    stage = normalizeStage(null, body.status);
+  }
+  if (!VALID_STAGES.has(stage)) {
+    return res.status(400).json({
+      error: 'stage must be ' + PIPELINE_STAGES.join('|'),
+    });
   }
 
   const assignee = body.assignee != null ? String(body.assignee).trim() || 'cos' : 'cos';
@@ -459,20 +556,21 @@ router.post('/api/tasks', requireApiAccess, (req, res) => {
     brief,
     clientId,
     assignee,
-    status,
+    stage,
+    status: statusFromStage(stage),
     result: '',
     resultLinks: [],
     progress: body.progress != null ? String(body.progress) : '',
     priority: body.priority ? String(body.priority).toLowerCase() : 'medium',
     createdAt: now,
     updatedAt: now,
-    completedAt: status === 'done' ? now : null,
+    completedAt: stage === 'done' ? now : null,
   };
 
   const data = readTasks();
   data.tasks.unshift(task);
   writeJson(TASKS_FILE, data);
-  res.status(201).json(task);
+  res.status(201).json(publicTask(task));
 });
 
 router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
@@ -482,15 +580,29 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
   const task = data.tasks[idx];
   const body = req.body || {};
 
-  if (body.status !== undefined) {
-    const status = normalizeStatus(body.status);
-    if (!VALID_STATUSES.has(status)) {
-      return res.status(400).json({ error: 'status must be inbox|cooking|waiting|done' });
+  if (body.stage !== undefined) {
+    const stage = normalizeStage(body.stage);
+    if (!VALID_STAGES.has(stage)) {
+      return res.status(400).json({
+        error: 'stage must be ' + PIPELINE_STAGES.join('|'),
+      });
     }
-    task.status = status;
-    if (status === 'done') task.completedAt = new Date().toISOString();
-    if (status !== 'done') task.completedAt = null;
+    task.stage = stage;
+    task.status = statusFromStage(stage);
+    if (stage === 'done') task.completedAt = new Date().toISOString();
+    else task.completedAt = null;
+  } else if (body.status !== undefined) {
+    // Legacy: accept status and map to stage
+    const stage = normalizeStage(null, body.status);
+    if (!VALID_STAGES.has(stage)) {
+      return res.status(400).json({ error: 'invalid status/stage' });
+    }
+    task.stage = stage;
+    task.status = statusFromStage(stage);
+    if (stage === 'done') task.completedAt = new Date().toISOString();
+    else task.completedAt = null;
   }
+
   if (body.result !== undefined) task.result = String(body.result);
   if (body.resultLinks !== undefined) {
     task.resultLinks = Array.isArray(body.resultLinks)
@@ -516,10 +628,23 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
     task.priority = String(body.priority).toLowerCase();
   }
 
+  // Ensure stage always present
+  task.stage = normalizeStage(task.stage, task.status);
+  task.status = statusFromStage(task.stage);
+
   task.updatedAt = new Date().toISOString();
   data.tasks[idx] = task;
   writeJson(TASKS_FILE, data);
-  res.json(task);
+  res.json(publicTask(task));
+});
+
+router.delete('/api/tasks/:id', requireApiAccess, (req, res) => {
+  const data = readTasks();
+  const idx = data.tasks.findIndex((t) => t.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'not found' });
+  const [removed] = data.tasks.splice(idx, 1);
+  writeJson(TASKS_FILE, data);
+  res.json({ ok: true, deleted: publicTask(removed) });
 });
 
 router.post('/api/delegate', requireUiAuth, (req, res) => {
@@ -537,7 +662,17 @@ router.post('/api/delegate', requireUiAuth, (req, res) => {
     String(body.title || '').trim() ||
     (lines[0] ? lines[0].slice(0, 120) : 'Delegated task');
   const brief = text;
-  const status = body.status === 'inbox' ? 'inbox' : 'cooking';
+
+  let stage = 'copywriting';
+  if (body.stage != null) {
+    stage = normalizeStage(body.stage);
+  } else if (body.status === 'inbox') {
+    stage = 'research';
+  } else if (body.status != null) {
+    stage = normalizeStage(null, body.status);
+  }
+  if (!VALID_STAGES.has(stage)) stage = 'copywriting';
+
   const assignee = body.assignee != null ? String(body.assignee).trim() || 'cos' : 'cos';
   const now = new Date().toISOString();
 
@@ -547,7 +682,8 @@ router.post('/api/delegate', requireUiAuth, (req, res) => {
     brief,
     clientId,
     assignee,
-    status,
+    stage,
+    status: statusFromStage(stage),
     result: '',
     resultLinks: [],
     progress: '',
@@ -575,7 +711,7 @@ router.post('/api/delegate', requireUiAuth, (req, res) => {
   thread.messages.push(msg);
   writeJson(CHAT_FILE, chatData);
 
-  res.status(201).json({ task, message: msg });
+  res.status(201).json({ task: publicTask(task), message: msg });
 });
 
 // Static assets (css/js) are public; HTML shell stays behind the password gate.

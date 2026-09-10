@@ -10,6 +10,37 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+  const PIPELINE_STAGES = [
+    'research',
+    'copywriting',
+    'approve_copy',
+    'static_production',
+    'approve_statics',
+    'drive_upload',
+    'done',
+  ];
+
+  const STAGE_LABELS = {
+    research: 'Research',
+    copywriting: 'Copywriting',
+    approve_copy: 'Approve copy',
+    static_production: 'Static production',
+    approve_statics: 'Approve statics',
+    drive_upload: 'Drive upload',
+    done: 'Done',
+  };
+
+  const HUMAN_STAGES = new Set(['approve_copy', 'approve_statics']);
+
+  const STATUS_TO_STAGE = {
+    queued: 'research',
+    inbox: 'research',
+    in_progress: 'copywriting',
+    cooking: 'copywriting',
+    waiting: 'approve_copy',
+    done: 'done',
+  };
+
   const state = {
     clients: [],
     tasks: [],
@@ -17,9 +48,8 @@
     currentClientId: 'my-plate',
     taskById: new Map(),
     currentTaskId: null,
+    pendingDeleteId: null,
   };
-
-  const COLUMNS = ['inbox', 'cooking', 'waiting', 'done'];
 
   function esc(s) {
     return String(s)
@@ -46,6 +76,17 @@
     return t.slice(0, n - 1) + '…';
   }
 
+  function normalizeStage(t) {
+    if (t && t.stage && STAGE_LABELS[t.stage]) return t.stage;
+    if (t && t.status && STATUS_TO_STAGE[t.status]) return STATUS_TO_STAGE[t.status];
+    if (t && t.status && STAGE_LABELS[t.status]) return t.status;
+    return 'research';
+  }
+
+  function stageLabel(stage) {
+    return STAGE_LABELS[stage] || stage;
+  }
+
   function clientName(id) {
     const c = state.clients.find((x) => x.id === id);
     return c ? c.name : id;
@@ -70,9 +111,10 @@
     return data;
   }
 
-  function cookingCountFor(clientId) {
+  function activeCountFor(clientId) {
     return state.tasks.filter((t) => {
-      if (t.status !== 'cooking') return false;
+      const stage = normalizeStage(t);
+      if (stage === 'done') return false;
       if (clientId === 'my-plate') return true;
       return t.clientId === clientId;
     }).length;
@@ -83,10 +125,14 @@
     return state.tasks.filter((t) => t.clientId === state.currentClientId);
   }
 
+  function needsYouTasks() {
+    return visibleTasks().filter((t) => HUMAN_STAGES.has(normalizeStage(t)));
+  }
+
   function renderNav() {
     const nav = $('#client-nav');
     nav.innerHTML = state.clients.map((c) => {
-      const count = cookingCountFor(c.id);
+      const count = activeCountFor(c.id);
       const active = c.id === state.currentClientId ? 'active' : '';
       return `<button type="button" class="client-item ${active}" data-client="${esc(c.id)}">
         <span class="nav-label">${esc(c.name)}</span>
@@ -112,42 +158,112 @@
     loadChat().catch(() => {});
   }
 
-  function taskCard(t) {
+  function stageChipClass(stage) {
+    if (HUMAN_STAGES.has(stage)) return 'chip stage human';
+    if (stage === 'done') return 'chip stage done';
+    return 'chip stage';
+  }
+
+  function taskCard(t, opts = {}) {
+    const stage = normalizeStage(t);
     const progress = t.progress
       ? `<div class="progress">${esc(preview(t.progress, 100))}</div>`
       : '';
-    const result = t.result && (t.status === 'done' || t.status === 'waiting')
+    const showResult = t.result && (HUMAN_STAGES.has(stage) || stage === 'done');
+    const result = showResult
       ? `<div class="result-preview">${esc(preview(t.result, 160))}</div>`
       : '';
-    return `<button type="button" class="card" data-task-id="${esc(t.id)}">
-      <div class="card-meta">
-        <span class="chip assignee">${esc(t.assignee || 'cos')}</span>
-        ${t.clientId && state.currentClientId === 'my-plate' && t.clientId !== 'my-plate'
-          ? `<span class="chip">${esc(clientName(t.clientId))}</span>` : ''}
-      </div>
-      <h3>${esc(t.title)}</h3>
-      <p class="brief">${esc(preview(t.brief, 160))}</p>
-      ${progress}
-      ${result}
-    </button>`;
+    const compact = opts.compact ? ' compact' : '';
+    const deleteBtn = opts.showDelete
+      ? `<button type="button" class="card-delete" data-delete-id="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>`
+      : '';
+    return `<div class="card-wrap${compact}">
+      <button type="button" class="card" data-task-id="${esc(t.id)}">
+        <div class="card-meta">
+          <span class="${stageChipClass(stage)}">${esc(stageLabel(stage))}</span>
+          <span class="chip assignee">${esc(t.assignee || 'cos')}</span>
+          ${t.clientId && state.currentClientId === 'my-plate' && t.clientId !== 'my-plate'
+            ? `<span class="chip">${esc(clientName(t.clientId))}</span>` : ''}
+        </div>
+        <h3>${esc(t.title)}</h3>
+        <p class="brief">${esc(preview(t.brief, 160))}</p>
+        ${progress}
+        ${result}
+      </button>
+      ${deleteBtn}
+    </div>`;
+  }
+
+  function renderPipelineViz(tasks) {
+    const counts = {};
+    for (const s of PIPELINE_STAGES) counts[s] = 0;
+    for (const t of tasks) {
+      const s = normalizeStage(t);
+      if (counts[s] != null) counts[s] += 1;
+      else counts.research += 1;
+    }
+
+    const flow = $('#pipeline-flow');
+    flow.innerHTML = PIPELINE_STAGES.map((s, i) => {
+      const human = HUMAN_STAGES.has(s) ? ' human' : '';
+      const done = s === 'done' ? ' done' : '';
+      const has = counts[s] > 0 ? ' has-tasks' : '';
+      const arrow = i < PIPELINE_STAGES.length - 1
+        ? '<span class="pipe-arrow" aria-hidden="true">→</span>'
+        : '';
+      return `<div class="pipe-step${human}${done}${has}" data-stage="${esc(s)}">
+        <span class="pipe-count">${counts[s]}</span>
+        <span class="pipe-label">${esc(stageLabel(s))}</span>
+      </div>${arrow}`;
+    }).join('');
+  }
+
+  function bindCardEvents(root) {
+    (root || document).querySelectorAll('.card[data-task-id]').forEach((btn) => {
+      btn.addEventListener('click', () => openTask(btn.dataset.taskId));
+    });
+    (root || document).querySelectorAll('[data-delete-id]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openDeleteConfirm(btn.dataset.deleteId);
+      });
+    });
   }
 
   function renderBoard() {
     const tasks = visibleTasks();
-    for (const status of COLUMNS) {
-      const list = tasks.filter((t) => t.status === status);
-      const el = $(`#col-${status}`);
-      const countEl = document.querySelector(`[data-count="${status}"]`);
-      if (countEl) countEl.textContent = String(list.length);
-      if (!list.length) {
-        el.innerHTML = '<div class="empty-slot">Nothing here</div>';
-      } else {
-        el.innerHTML = list.map(taskCard).join('');
-      }
+    const needs = needsYouTasks();
+
+    const needsSection = $('#needs-you');
+    const needsList = $('#needs-you-list');
+    $('#needs-you-count').textContent = String(needs.length);
+    if (!needs.length) {
+      needsSection.hidden = true;
+      needsList.innerHTML = '';
+    } else {
+      needsSection.hidden = false;
+      needsList.innerHTML = needs.map((t) => taskCard(t, { compact: true, showDelete: true })).join('');
     }
-    $$('.card[data-task-id]').forEach((btn) => {
-      btn.addEventListener('click', () => openTask(btn.dataset.taskId));
+
+    renderPipelineViz(tasks);
+
+    const sorted = tasks.slice().sort((a, b) => {
+      const ia = PIPELINE_STAGES.indexOf(normalizeStage(a));
+      const ib = PIPELINE_STAGES.indexOf(normalizeStage(b));
+      if (ia !== ib) return ia - ib;
+      return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
     });
+
+    $('#task-list-count').textContent = String(sorted.length);
+    const list = $('#task-list');
+    if (!sorted.length) {
+      list.innerHTML = '<div class="empty-slot">Nothing on this plate yet. Delegate something.</div>';
+    } else {
+      list.innerHTML = sorted.map((t) => taskCard(t, { showDelete: true })).join('');
+    }
+
+    bindCardEvents(document);
   }
 
   function renderChat(messages) {
@@ -163,15 +279,30 @@
     chatList.scrollTop = chatList.scrollHeight;
   }
 
+  function renderModalStageTrack(current) {
+    const el = $('#modal-stage-track');
+    const idx = PIPELINE_STAGES.indexOf(current);
+    el.innerHTML = PIPELINE_STAGES.map((s, i) => {
+      let cls = 'track-dot';
+      if (i < idx) cls += ' past';
+      if (i === idx) cls += ' current';
+      if (HUMAN_STAGES.has(s)) cls += ' human';
+      return `<span class="${cls}" title="${esc(stageLabel(s))}"></span>`;
+    }).join('<span class="track-line"></span>');
+  }
+
   function openTask(id) {
     const t = state.taskById.get(id);
     if (!t) return;
     state.currentTaskId = id;
+    const stage = normalizeStage(t);
+
     $('#modal-title').textContent = t.title;
     $('#modal-assignee').textContent = t.assignee || 'cos';
-    $('#modal-status').textContent = t.status;
+    $('#modal-stage').textContent = stageLabel(stage);
     $('#modal-client').textContent = clientName(t.clientId);
     $('#modal-brief').textContent = t.brief || '';
+    renderModalStageTrack(stage);
 
     const progWrap = $('#modal-progress-wrap');
     if (t.progress) {
@@ -183,13 +314,14 @@
 
     const resWrap = $('#modal-result-wrap');
     const hasDeliverable = !!(t.result || (t.resultLinks && t.resultLinks.length));
-    if (hasDeliverable) {
+    const showDeliverable = hasDeliverable && (HUMAN_STAGES.has(stage) || stage === 'done' || stage === 'drive_upload');
+    if (showDeliverable) {
       resWrap.hidden = false;
       const label = $('#modal-result-label');
       if (label) {
-        label.textContent = t.status === 'waiting'
+        label.textContent = HUMAN_STAGES.has(stage)
           ? 'What you are approving'
-          : t.status === 'done'
+          : stage === 'done'
             ? 'Result'
             : 'Deliverable';
       }
@@ -208,6 +340,12 @@
     const ok = $('#modal-action-ok');
     ok.hidden = true;
     ok.textContent = '';
+
+    const isHuman = HUMAN_STAGES.has(stage);
+    $('#task-approve-btn').hidden = !isHuman;
+    $('#task-reject-btn').hidden = !isHuman;
+    $('#task-feedback-btn').hidden = !isHuman;
+
     $('#task-modal').showModal();
   }
 
@@ -215,6 +353,21 @@
     const modal = $('#task-modal');
     if (modal.open) modal.close();
     state.currentTaskId = null;
+  }
+
+  function openDeleteConfirm(id) {
+    const t = state.taskById.get(id);
+    if (!t) return;
+    state.pendingDeleteId = id;
+    $('#delete-modal-text').textContent =
+      `Delete “${t.title}”? This cannot be undone.`;
+    $('#delete-modal').showModal();
+  }
+
+  function closeDeleteModal() {
+    const modal = $('#delete-modal');
+    if (modal.open) modal.close();
+    state.pendingDeleteId = null;
   }
 
   async function patchCurrentTask(body) {
@@ -243,9 +396,7 @@
     const data = await api('/api/tasks');
     state.tasks = (data.tasks || []).map((t) => ({
       ...t,
-      status: t.status === 'queued' ? 'inbox'
-        : t.status === 'in_progress' ? 'cooking'
-        : t.status,
+      stage: normalizeStage(t),
     }));
     state.taskById = new Map(state.tasks.map((t) => [t.id, t]));
     renderNav();
@@ -333,14 +484,42 @@
   $('#task-modal-close').addEventListener('click', closeTaskModal);
 
   $('#task-approve-btn').addEventListener('click', async () => {
-    await patchCurrentTask({ status: 'done', progress: 'Approved' });
-    flashModalOk('Approved — moved to Done.');
+    const t = state.taskById.get(state.currentTaskId);
+    if (!t) return;
+    const stage = normalizeStage(t);
+    let next;
+    let note;
+    if (stage === 'approve_copy') {
+      next = 'static_production';
+      note = 'Copy approved → static production';
+    } else if (stage === 'approve_statics') {
+      next = 'drive_upload';
+      note = 'Statics approved → drive upload (stub)';
+    } else {
+      return;
+    }
+    await patchCurrentTask({ stage: next, progress: note });
+    flashModalOk(note);
     setTimeout(closeTaskModal, 450);
   });
 
   $('#task-reject-btn').addEventListener('click', async () => {
-    await patchCurrentTask({ status: 'inbox', progress: 'Rejected — back to Inbox' });
-    flashModalOk('Rejected — back to Inbox.');
+    const t = state.taskById.get(state.currentTaskId);
+    if (!t) return;
+    const stage = normalizeStage(t);
+    let next;
+    let note;
+    if (stage === 'approve_copy') {
+      next = 'copywriting';
+      note = 'Copy rejected → back to copywriting';
+    } else if (stage === 'approve_statics') {
+      next = 'static_production';
+      note = 'Statics rejected → back to static production';
+    } else {
+      return;
+    }
+    await patchCurrentTask({ stage: next, progress: note });
+    flashModalOk(note);
     setTimeout(closeTaskModal, 450);
   });
 
@@ -357,13 +536,33 @@
       return;
     }
     const t = state.taskById.get(state.currentTaskId);
-    const prev = (t && t.progress) ? String(t.progress) + '\n' : '';
+    if (!t) return;
+    const stage = normalizeStage(t);
+    const prev = t.progress ? String(t.progress) + '\n' : '';
+    // Keep in current human stage; just append feedback
     await patchCurrentTask({
-      status: 'waiting',
+      stage,
       progress: prev + 'Feedback: ' + note,
     });
-    flashModalOk('Feedback saved — Waiting on you.');
+    flashModalOk('Feedback saved.');
     setTimeout(closeTaskModal, 450);
+  });
+
+  $('#task-delete-btn').addEventListener('click', () => {
+    if (!state.currentTaskId) return;
+    openDeleteConfirm(state.currentTaskId);
+  });
+
+  $('#delete-modal-close').addEventListener('click', closeDeleteModal);
+  $('#delete-cancel-btn').addEventListener('click', closeDeleteModal);
+
+  $('#delete-confirm-btn').addEventListener('click', async () => {
+    const id = state.pendingDeleteId;
+    if (!id) return;
+    await api('/api/tasks/' + id, { method: 'DELETE' });
+    closeDeleteModal();
+    if (state.currentTaskId === id) closeTaskModal();
+    await loadTasks();
   });
 
   loadClients()

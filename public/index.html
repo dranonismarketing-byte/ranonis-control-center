@@ -38,7 +38,7 @@
     <div class="main-col">
       <header class="board-header">
         <div>
-          <p class="eyebrow" id="board-eyebrow">Board</p>
+          <p class="eyebrow" id="board-eyebrow">Pipeline</p>
           <h1 id="board-title">My plate</h1>
         </div>
         <div class="header-actions">
@@ -46,36 +46,31 @@
         </div>
       </header>
 
-      <section class="kanban" aria-label="Kanban board">
-        <div class="column" data-status="inbox">
-          <div class="column-head">
-            <h2>Inbox</h2>
-            <span class="count" data-count="inbox">0</span>
+      <div class="main-scroll">
+        <section id="needs-you" class="needs-you" aria-label="Needs you" hidden>
+          <div class="needs-you-head">
+            <h2>Needs you</h2>
+            <span class="count" id="needs-you-count">0</span>
           </div>
-          <div class="column-body" id="col-inbox"></div>
-        </div>
-        <div class="column" data-status="cooking">
-          <div class="column-head">
-            <h2>Cooking</h2>
-            <span class="count" data-count="cooking">0</span>
+          <div id="needs-you-list" class="needs-you-list"></div>
+        </section>
+
+        <section class="pipeline-viz" aria-label="Pipeline stages">
+          <div class="pipeline-viz-head">
+            <h2>Pipeline</h2>
+            <p class="muted small">How work moves from research to done</p>
           </div>
-          <div class="column-body" id="col-cooking"></div>
-        </div>
-        <div class="column" data-status="waiting">
-          <div class="column-head">
-            <h2>Waiting on you</h2>
-            <span class="count" data-count="waiting">0</span>
+          <div id="pipeline-flow" class="pipeline-flow"></div>
+        </section>
+
+        <section class="task-board" aria-label="Tasks">
+          <div class="task-board-head">
+            <h2>Tasks</h2>
+            <span class="count" id="task-list-count">0</span>
           </div>
-          <div class="column-body" id="col-waiting"></div>
-        </div>
-        <div class="column" data-status="done">
-          <div class="column-head">
-            <h2>Done</h2>
-            <span class="count" data-count="done">0</span>
-          </div>
-          <div class="column-body" id="col-done"></div>
-        </div>
-      </section>
+          <div id="task-list" class="task-list"></div>
+        </section>
+      </div>
     </div>
 
     <aside class="chat-panel" aria-label="Chat">
@@ -101,7 +96,8 @@
         <button type="button" class="btn ghost icon" id="task-modal-close" aria-label="Close">✕</button>
       </header>
       <div class="modal-body">
-        <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-status"></span> · <span id="modal-client"></span></p>
+        <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-stage"></span> · <span id="modal-client"></span></p>
+        <div id="modal-stage-track" class="modal-stage-track" aria-hidden="true"></div>
         <h3>Brief</h3>
         <pre id="modal-brief" class="block-text"></pre>
         <div id="modal-progress-wrap" hidden>
@@ -120,9 +116,27 @@
         <p id="modal-action-ok" class="ok" hidden></p>
       </div>
       <footer class="modal-foot stub-actions">
+        <button type="button" class="btn danger-outline" id="task-delete-btn">Delete</button>
+        <span class="modal-foot-spacer"></span>
         <button type="button" class="btn ghost" id="task-reject-btn">Reject</button>
         <button type="button" class="btn ghost" id="task-feedback-btn">Feedback</button>
         <button type="button" class="btn primary" id="task-approve-btn">Approve</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="delete-modal" class="modal">
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2>Delete task?</h2>
+        <button type="button" class="btn ghost icon" id="delete-modal-close" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="delete-modal-text">This cannot be undone.</p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn ghost" id="delete-cancel-btn">Cancel</button>
+        <button type="button" class="btn danger" id="delete-confirm-btn">Delete</button>
       </footer>
     </div>
   </dialog>
