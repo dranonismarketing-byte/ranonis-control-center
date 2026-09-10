@@ -40,9 +40,18 @@
         <div>
           <p class="eyebrow" id="board-eyebrow">Home</p>
           <h1 id="board-title">My plate</h1>
+          <p class="ad-spine muted small" id="ad-spine" hidden>
+            <span>Delegate</span><span class="spine-sep">→</span>
+            <span>OK copy</span><span class="spine-sep">→</span>
+            <span>OK final ads</span>
+          </p>
         </div>
         <div class="header-actions">
-          <button type="button" id="delegate-open-btn" class="btn primary">Delegate</button>
+          <div class="view-toggle" role="tablist" aria-label="View">
+            <button type="button" class="view-btn active" data-view="list" role="tab" aria-selected="true">List</button>
+            <button type="button" class="view-btn" data-view="board" role="tab" aria-selected="false">Board</button>
+          </div>
+          <button type="button" id="delegate-open-btn" class="btn primary" data-marker="delegate">Delegate</button>
         </div>
       </header>
 
@@ -63,7 +72,11 @@
           <div id="pipeline-flow" class="pipeline-flow"></div>
         </section>
 
-        <section class="kanban" aria-label="Kanban board">
+        <!-- List-first default (Asana / Linear quiet) -->
+        <section id="list-view" class="list-view" aria-label="Task list"></section>
+
+        <!-- Board as optional lens -->
+        <section id="board-view" class="kanban" aria-label="Board" hidden>
           <div class="column" data-status="inbox">
             <div class="column-head">
               <h2>Inbox</h2>
@@ -114,61 +127,71 @@
     </aside>
   </div>
 
-  <dialog id="task-modal" class="modal">
-    <div class="modal-card">
+  <!-- In-task detail (proofing lives here — copy + ads together) -->
+  <dialog id="task-modal" class="modal modal-wide">
+    <div class="modal-card proof-card">
       <header class="modal-head">
-        <h2 id="modal-title">Task</h2>
+        <div class="modal-head-text">
+          <h2 id="modal-title">Task</h2>
+          <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-stage"></span> · <span id="modal-client"></span></p>
+          <div id="modal-stage-track" class="modal-stage-track" hidden></div>
+        </div>
         <button type="button" class="btn ghost icon" id="task-modal-close" aria-label="Close">✕</button>
       </header>
-      <div class="modal-body">
-        <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-stage"></span> · <span id="modal-client"></span></p>
-        <div id="modal-stage-track" class="modal-stage-track" hidden></div>
-        <div id="modal-pipeline-flow-wrap" class="modal-pipeline-wrap" hidden>
-          <div id="modal-pipeline-flow" class="pipeline-flow compact"></div>
+      <div class="modal-body proof-body">
+        <div class="proof-main">
+          <div id="modal-pipeline-flow-wrap" class="modal-pipeline-wrap" hidden>
+            <div id="modal-pipeline-flow" class="pipeline-flow compact"></div>
+          </div>
+          <h3>Brief</h3>
+          <pre id="modal-brief" class="block-text"></pre>
+          <div id="modal-progress-wrap" hidden>
+            <h3>Progress</h3>
+            <pre id="modal-progress" class="block-text"></pre>
+          </div>
+          <div id="modal-result-wrap" hidden>
+            <h3 id="modal-result-label" class="modal-section-title">Please check this</h3>
+            <pre id="modal-result" class="block-text result"></pre>
+            <div id="modal-links"></div>
+          </div>
+          <div id="modal-drive-wrap" class="drive-wrap" hidden>
+            <h3>Google Drive folder</h3>
+            <div id="modal-drive-view" class="drive-view" hidden>
+              <a id="modal-drive-link" href="#" target="_blank" rel="noopener">Open folder</a>
+              <button type="button" class="btn ghost small-btn" id="modal-drive-edit-btn">Change link</button>
+            </div>
+            <div id="modal-drive-edit" class="drive-edit" hidden>
+              <label for="modal-drive-input" class="sr-only">Google Drive folder link</label>
+              <input id="modal-drive-input" type="url" placeholder="Paste Google Drive folder link…" />
+              <div class="drive-edit-actions">
+                <button type="button" class="btn ghost" id="modal-drive-cancel-btn">Cancel</button>
+                <button type="button" class="btn primary" id="modal-drive-save-btn">Save link</button>
+              </div>
+            </div>
+            <button type="button" class="btn ghost" id="modal-drive-add-btn" hidden>Add Google Drive folder link</button>
+          </div>
+          <div id="modal-feedback-wrap" class="feedback-wrap" hidden>
+            <label for="modal-feedback">Note</label>
+            <textarea id="modal-feedback" rows="3" placeholder="Note for the board…"></textarea>
+          </div>
+          <p id="modal-action-ok" class="ok" hidden></p>
         </div>
-        <h3>Brief</h3>
-        <pre id="modal-brief" class="block-text"></pre>
-        <div id="modal-progress-wrap" hidden>
-          <h3>Progress</h3>
-          <pre id="modal-progress" class="block-text"></pre>
-        </div>
-        <div id="modal-result-wrap" hidden>
-          <h3 id="modal-result-label" class="modal-section-title">Please check this</h3>
-          <pre id="modal-result" class="block-text result"></pre>
-          <div id="modal-links"></div>
-        </div>
-        <div id="modal-gallery-wrap" class="gallery-wrap" hidden>
+        <aside id="modal-gallery-wrap" class="gallery-wrap proof-gallery" hidden>
           <h3>Ad images</h3>
           <p class="muted small" id="modal-gallery-hint">OK or send back each ad image.</p>
           <div id="modal-gallery" class="image-gallery"></div>
-        </div>
-        <div id="modal-drive-wrap" class="drive-wrap" hidden>
-          <h3>Google Drive folder</h3>
-          <div id="modal-drive-view" class="drive-view" hidden>
-            <a id="modal-drive-link" href="#" target="_blank" rel="noopener">Open folder</a>
-            <button type="button" class="btn ghost small-btn" id="modal-drive-edit-btn">Change link</button>
-          </div>
-          <div id="modal-drive-edit" class="drive-edit" hidden>
-            <label for="modal-drive-input" class="sr-only">Google Drive folder link</label>
-            <input id="modal-drive-input" type="url" placeholder="Paste Google Drive folder link…" />
-            <div class="drive-edit-actions">
-              <button type="button" class="btn ghost" id="modal-drive-cancel-btn">Cancel</button>
-              <button type="button" class="btn primary" id="modal-drive-save-btn">Save link</button>
-            </div>
-          </div>
-          <button type="button" class="btn ghost" id="modal-drive-add-btn" hidden>Add Google Drive folder link</button>
-        </div>
-        <div id="modal-feedback-wrap" class="feedback-wrap" hidden>
-          <label for="modal-feedback">Note</label>
-          <textarea id="modal-feedback" rows="3" placeholder="Note for the board…"></textarea>
-        </div>
-        <p id="modal-action-ok" class="ok" hidden></p>
+        </aside>
       </div>
       <footer class="modal-foot stub-actions">
-        <button type="button" class="btn danger-outline" id="task-delete-btn">Delete</button>
+        <div class="more-menu">
+          <button type="button" class="btn ghost" id="task-more-btn" aria-expanded="false" aria-haspopup="true">More</button>
+          <div id="task-more-panel" class="more-panel" hidden>
+            <button type="button" class="btn ghost" id="task-reject-btn" hidden>Send back</button>
+            <button type="button" class="btn ghost" id="task-feedback-btn" hidden>Add a note</button>
+            <button type="button" class="btn danger-outline" id="task-delete-btn">Delete</button>
+          </div>
+        </div>
         <span class="modal-foot-spacer"></span>
-        <button type="button" class="btn ghost" id="task-reject-btn" hidden>Send back</button>
-        <button type="button" class="btn ghost" id="task-feedback-btn" hidden>Add a note</button>
         <button type="button" class="btn primary" id="task-ready-btn" hidden>Ready for my review</button>
         <button type="button" class="btn primary" id="task-approve-btn" data-marker="ok-action" hidden>OK copy</button>
       </footer>

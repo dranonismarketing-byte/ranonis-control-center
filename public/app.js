@@ -34,7 +34,7 @@
     copywriting: 'Writing copy',
     approve_copy: 'Needs your OK on copy',
     static_production: 'Making ad images',
-    approve_statics: 'Needs your OK on ads',
+    approve_statics: 'Needs your OK on final ads',
     drive_upload: 'Uploading',
     done: 'Done',
   };
@@ -45,7 +45,7 @@
     copywriting: 'Writing',
     approve_copy: 'OK copy',
     static_production: 'Ad images',
-    approve_statics: 'OK ads',
+    approve_statics: 'OK final ads',
     drive_upload: 'Upload',
     done: 'Done',
   };
@@ -80,6 +80,33 @@
     'drive_upload',
   ]);
 
+  /** Visible ad spine for Donatas — only three touchpoints that matter. */
+  const AD_SPINE = [
+    { key: 'delegate', label: 'Delegate' },
+    { key: 'ok_copy', label: 'OK copy' },
+    { key: 'ok_final', label: 'OK final ads' },
+  ];
+
+  function spineKeyForStage(stage) {
+    if (stage === 'approve_copy') return 'ok_copy';
+    if (stage === 'approve_statics') return 'ok_final';
+    if (stage === 'done' || stage === 'drive_upload') return 'ok_final';
+    if (stage === 'static_production') return 'ok_copy'; // past copy OK
+    // research / copywriting = still in Delegate / writing
+    return 'delegate';
+  }
+
+  function spineIndexForStage(stage) {
+    const key = spineKeyForStage(stage);
+    const idx = AD_SPINE.findIndex((s) => s.key === key);
+    // static_production means copy already OK → highlight OK copy as past, next is final
+    if (stage === 'static_production') return 1;
+    if (stage === 'approve_statics') return 2;
+    if (stage === 'drive_upload' || stage === 'done') return 2;
+    if (stage === 'approve_copy') return 1;
+    return 0;
+  }
+
   const state = {
     clients: [],
     tasks: [],
@@ -88,6 +115,7 @@
     taskById: new Map(),
     currentTaskId: null,
     pendingDeleteId: null,
+    viewMode: (typeof localStorage !== 'undefined' && localStorage.getItem('cc_view')) || 'list',
   };
 
   function esc(s) {
@@ -327,13 +355,13 @@
   }
 
   function cardStepDots(current) {
-    const idx = PIPELINE_STAGES.indexOf(current);
-    return `<div class="card-dots" aria-hidden="true">${PIPELINE_STAGES.map((s, i) => {
+    const idx = spineIndexForStage(current);
+    return `<div class="card-dots spine-dots" aria-hidden="true" title="Delegate → OK copy → OK final ads">${AD_SPINE.map((s, i) => {
       let cls = 'dot';
       if (i < idx) cls += ' past';
       if (i === idx) cls += ' current';
-      if (HUMAN_STAGES.has(s)) cls += ' human';
-      return `<span class="${cls}"></span>`;
+      if (s.key === 'ok_copy' || s.key === 'ok_final') cls += ' human';
+      return `<span class="${cls}" title="${esc(s.label)}"></span>`;
     }).join('')}</div>`;
   }
 
@@ -421,7 +449,7 @@
   }
 
   function bindCardEvents(root) {
-    (root || document).querySelectorAll('.card[data-task-id]').forEach((btn) => {
+    (root || document).querySelectorAll('.card[data-task-id], .list-row[data-task-id]').forEach((btn) => {
       btn.addEventListener('click', () => openTask(btn.dataset.taskId));
     });
     (root || document).querySelectorAll('[data-delete-id]').forEach((btn) => {
@@ -433,27 +461,93 @@
     });
   }
 
+  function setViewMode(mode) {
+    state.viewMode = mode === 'board' ? 'board' : 'list';
+    try { localStorage.setItem('cc_view', state.viewMode); } catch (_) {}
+    $$('.view-btn').forEach((btn) => {
+      const on = btn.dataset.view === state.viewMode;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    renderBoard();
+  }
+
+  function listRow(t) {
+    const stage = normalizeStage(t);
+    const col = columnForTask(t);
+    const status = cardStatusLine(t);
+    const human = HUMAN_STAGES.has(stage);
+    const client = (state.currentClientId === 'my-plate' && t.clientId && t.clientId !== 'my-plate')
+      ? `<span class="row-meta">${esc(clientName(t.clientId))}</span>` : '';
+    const dots = isCreativeTask(t) ? cardStepDots(stage) : '';
+    const cta = human
+      ? `<span class="row-cta">${esc(stage === 'approve_copy' ? 'OK copy' : 'OK final ads')}</span>`
+      : '';
+    return `<div class="list-row-wrap">
+      <button type="button" class="list-row${human ? ' needs-ok' : ''}" data-task-id="${esc(t.id)}">
+        <span class="row-check" aria-hidden="true"></span>
+        <span class="row-main">
+          <span class="row-title">${esc(t.title)}</span>
+          <span class="row-brief">${esc(preview(t.brief, 100))}</span>
+        </span>
+        ${dots}
+        <span class="row-status${human ? ' human' : ''}">${esc(status)}</span>
+        ${client}
+        ${cta}
+      </button>
+      <button type="button" class="row-delete" data-delete-id="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>
+    </div>`;
+  }
+
+  function renderListView(tasks) {
+    const el = $('#list-view');
+    if (!el) return;
+    if (!tasks.length) {
+      el.innerHTML = '<div class="empty-slot quiet">Nothing on your plate</div>';
+      return;
+    }
+    // Group by column; hide empty sections
+    const parts = [];
+    for (const status of COLUMNS) {
+      const list = tasks.filter((t) => columnForTask(t) === status);
+      if (!list.length) continue;
+      parts.push(`<div class="list-section" data-status="${esc(status)}">
+        <div class="list-section-head">
+          <h2>${esc(COLUMN_LABELS[status])}</h2>
+          <span class="count">${list.length}</span>
+        </div>
+        <div class="list-section-body">${list.map(listRow).join('')}</div>
+      </div>`);
+    }
+    el.innerHTML = parts.join('') || '<div class="empty-slot quiet">Nothing on your plate</div>';
+  }
+
   function renderBoard() {
     const tasks = visibleTasks();
     const needs = needsYouTasks();
     const isHome = state.currentClientId === 'my-plate';
-    const isAdFactory = state.currentClientId === 'ad-factory';
 
     renderOverview(isHome ? state.tasks : tasks);
+
+    // Ad spine hint when viewing creative work / ad-factory / any creative tasks
+    const spine = $('#ad-spine');
+    if (spine) {
+      const showSpine = state.currentClientId === 'ad-factory'
+        || tasks.some((t) => isCreativeTask(t));
+      spine.hidden = !showSpine;
+    }
 
     const needsSection = $('#needs-you');
     const needsList = $('#needs-you-list');
     $('#needs-you-count').textContent = String(needs.length);
-    // Needs-you strip: Home overview of approve_* , or when client has any
     if (!needs.length) {
       needsSection.hidden = true;
       needsList.innerHTML = '';
     } else {
       needsSection.hidden = false;
-      needsList.innerHTML = needs.map((t) => taskCard(t, { compact: true })).join('');
+      needsList.innerHTML = needs.map((t) => listRow(t)).join('');
     }
 
-    // Quiet UI: no board-level pipeline strip — step dots live on creative cards only
     const pipeSection = $('#pipeline-viz');
     if (pipeSection) {
       pipeSection.hidden = true;
@@ -461,15 +555,31 @@
       if (flow) flow.innerHTML = '';
     }
 
-    for (const status of COLUMNS) {
-      const list = tasks.filter((t) => columnForTask(t) === status);
-      const el = $(`#col-${status}`);
-      const countEl = document.querySelector(`[data-count="${status}"]`);
-      if (countEl) countEl.textContent = String(list.length);
-      if (!list.length) {
-        el.innerHTML = '<div class="empty-slot">Nothing here</div>';
-      } else {
-        el.innerHTML = list.map((t) => taskCard(t)).join('');
+    const listEl = $('#list-view');
+    const boardEl = $('#board-view');
+    const mode = state.viewMode === 'board' ? 'board' : 'list';
+
+    if (mode === 'list') {
+      if (listEl) listEl.hidden = false;
+      if (boardEl) boardEl.hidden = true;
+      renderListView(tasks);
+    } else {
+      if (listEl) listEl.hidden = true;
+      if (boardEl) boardEl.hidden = false;
+      for (const status of COLUMNS) {
+        const list = tasks.filter((t) => columnForTask(t) === status);
+        const col = boardEl && boardEl.querySelector(`.column[data-status="${status}"]`);
+        const el = $(`#col-${status}`);
+        const countEl = document.querySelector(`[data-count="${status}"]`);
+        if (countEl) countEl.textContent = String(list.length);
+        // Hide empty columns by default (quiet)
+        if (col) col.hidden = list.length === 0;
+        if (!el) continue;
+        if (!list.length) {
+          el.innerHTML = '';
+        } else {
+          el.innerHTML = list.map((t) => taskCard(t)).join('');
+        }
       }
     }
 
@@ -499,13 +609,14 @@
 
   function renderModalStageTrack(current) {
     const el = $('#modal-stage-track');
-    const idx = PIPELINE_STAGES.indexOf(current);
-    el.innerHTML = PIPELINE_STAGES.map((s, i) => {
+    if (!el) return;
+    const idx = spineIndexForStage(current);
+    el.innerHTML = AD_SPINE.map((s, i) => {
       let cls = 'track-dot';
       if (i < idx) cls += ' past';
       if (i === idx) cls += ' current';
-      if (HUMAN_STAGES.has(s)) cls += ' human';
-      return `<span class="${cls}" title="${esc(stageLabel(s))}"></span>`;
+      if (s.key !== 'delegate') cls += ' human';
+      return `<span class="${cls}" title="${esc(s.label)}"></span><span class="track-label">${esc(s.label)}</span>`;
     }).join('<span class="track-line"></span>');
   }
 
@@ -701,7 +812,7 @@
       approveBtn.dataset.marker = 'ok-copy';
       rejectBtn.textContent = 'Send back to writing';
     } else if (stage === 'approve_statics') {
-      approveBtn.textContent = 'OK ads';
+      approveBtn.textContent = 'OK final ads';
       approveBtn.dataset.marker = 'ok-ads';
       rejectBtn.textContent = 'Send back to image work';
     } else {
@@ -711,8 +822,9 @@
     }
 
     // Optional: writing / image work with a result ready for human OK
-    const canReadyCopy = stage === 'copywriting' && !!(t.result || (t.resultLinks && t.resultLinks.length));
-    const canReadyStatics = stage === 'static_production' && !!(t.result || (t.resultLinks && t.resultLinks.length) || images.length);
+    // One primary CTA: never show Ready alongside OK copy / OK final ads
+    const canReadyCopy = !isHuman && stage === 'copywriting' && !!(t.result || (t.resultLinks && t.resultLinks.length));
+    const canReadyStatics = !isHuman && stage === 'static_production' && !!(t.result || (t.resultLinks && t.resultLinks.length) || images.length);
     if (canReadyCopy || canReadyStatics) {
       readyBtn.hidden = false;
       readyBtn.textContent = 'Ready for my review';
@@ -721,6 +833,16 @@
       readyBtn.hidden = true;
       readyBtn.dataset.nextStage = '';
     }
+
+    // Proofing layout: gallery beside copy when images exist
+    const proofBody = document.querySelector('.proof-body');
+    if (proofBody) proofBody.classList.toggle('has-gallery', images.length > 0);
+
+    // Reset more menu
+    const morePanel = $('#task-more-panel');
+    if (morePanel) morePanel.hidden = true;
+    const moreBtn = $('#task-more-btn');
+    if (moreBtn) moreBtn.setAttribute('aria-expanded', 'false');
 
     $('#task-modal').showModal();
   }
@@ -980,7 +1102,7 @@
       if (!imgs.length || !driveOk) {
         flashModalOk(
           !imgs.length
-            ? 'Need real ad images before OK ads'
+            ? 'Need real ad images before OK final ads'
             : 'Need a real Google Drive folder link before upload'
         );
         return;
@@ -1071,6 +1193,27 @@
     if (state.currentTaskId === id) closeTaskModal();
     await loadTasks();
   });
+
+  $$('.view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setViewMode(btn.dataset.view));
+  });
+  // Apply saved view chrome
+  $$('.view-btn').forEach((btn) => {
+    const on = btn.dataset.view === (state.viewMode === 'board' ? 'board' : 'list');
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+
+  const moreBtn = $('#task-more-btn');
+  if (moreBtn) {
+    moreBtn.addEventListener('click', () => {
+      const panel = $('#task-more-panel');
+      if (!panel) return;
+      const open = panel.hidden;
+      panel.hidden = !open;
+      moreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
 
   loadClients()
     .then(() => selectClient('my-plate'))
