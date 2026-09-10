@@ -464,6 +464,7 @@
   function setViewMode(mode) {
     state.viewMode = mode === 'board' ? 'board' : 'list';
     try { localStorage.setItem('cc_view', state.viewMode); } catch (_) {}
+    document.documentElement.dataset.ccView = state.viewMode;
     $$('.view-btn').forEach((btn) => {
       const on = btn.dataset.view === state.viewMode;
       btn.classList.toggle('active', on);
@@ -558,19 +559,33 @@
     const listEl = $('#list-view');
     const boardEl = $('#board-view');
     const mode = state.viewMode === 'board' ? 'board' : 'list';
+    document.documentElement.dataset.ccView = mode;
 
     if (mode === 'list') {
-      if (listEl) listEl.hidden = false;
-      if (boardEl) boardEl.hidden = true;
+      if (listEl) {
+        listEl.hidden = false;
+        listEl.removeAttribute('hidden');
+      }
+      if (boardEl) {
+        boardEl.hidden = true;
+        boardEl.setAttribute('hidden', '');
+      }
+      // Always re-paint list sections/rows (never leave board-only DOM as the visible surface)
       renderListView(tasks);
     } else {
-      if (listEl) listEl.hidden = true;
-      if (boardEl) boardEl.hidden = false;
+      if (listEl) {
+        listEl.hidden = true;
+        listEl.setAttribute('hidden', '');
+      }
+      if (boardEl) {
+        boardEl.hidden = false;
+        boardEl.removeAttribute('hidden');
+      }
       for (const status of COLUMNS) {
         const list = tasks.filter((t) => columnForTask(t) === status);
         const col = boardEl && boardEl.querySelector(`.column[data-status="${status}"]`);
-        const el = $(`#col-${status}`);
-        const countEl = document.querySelector(`[data-count="${status}"]`);
+        const el = boardEl && boardEl.querySelector(`#col-${status}`);
+        const countEl = boardEl && boardEl.querySelector(`[data-count="${status}"]`);
         if (countEl) countEl.textContent = String(list.length);
         // Hide empty columns by default (quiet)
         if (col) col.hidden = list.length === 0;
@@ -1198,6 +1213,7 @@
     btn.addEventListener('click', () => setViewMode(btn.dataset.view));
   });
   // Apply saved view chrome
+  document.documentElement.dataset.ccView = state.viewMode === 'board' ? 'board' : 'list';
   $$('.view-btn').forEach((btn) => {
     const on = btn.dataset.view === (state.viewMode === 'board' ? 'board' : 'list');
     btn.classList.toggle('active', on);

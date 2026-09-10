@@ -1087,6 +1087,15 @@ input:focus, textarea:focus, select:focus {
 .ad-spine .spine-sep { opacity: .45; }
 
 /* ——— List view (quiet Asana / Linear) ——— */
+/* Author display:flex/grid overrides UA [hidden] — force hide for view panes */
+.list-view[hidden],
+#board-view[hidden],
+.kanban[hidden],
+html[data-cc-view="list"] #board-view,
+html[data-cc-view="board"] #list-view {
+  display: none !important;
+}
+
 .list-view {
   display: flex;
   flex-direction: column;
