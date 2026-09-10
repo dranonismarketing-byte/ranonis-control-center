@@ -10,6 +10,15 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+  const COLUMNS = ['inbox', 'cooking', 'waiting', 'done'];
+
+  const COLUMN_LABELS = {
+    inbox: 'Inbox',
+    cooking: 'Cooking',
+    waiting: 'Waiting on you',
+    done: 'Done',
+  };
+
   const PIPELINE_STAGES = [
     'research',
     'copywriting',
@@ -32,6 +41,17 @@
 
   const HUMAN_STAGES = new Set(['approve_copy', 'approve_statics']);
 
+  /** Pipeline stage → Home / client Kanban column */
+  const STAGE_TO_COLUMN = {
+    research: 'inbox',
+    copywriting: 'cooking',
+    approve_copy: 'waiting',
+    static_production: 'cooking',
+    approve_statics: 'waiting',
+    drive_upload: 'cooking',
+    done: 'done',
+  };
+
   const STATUS_TO_STAGE = {
     queued: 'research',
     inbox: 'research',
@@ -40,6 +60,14 @@
     waiting: 'approve_copy',
     done: 'done',
   };
+
+  const CREATIVE_STAGES = new Set([
+    'copywriting',
+    'approve_copy',
+    'static_production',
+    'approve_statics',
+    'drive_upload',
+  ]);
 
   const state = {
     clients: [],
@@ -83,8 +111,22 @@
     return 'research';
   }
 
+  function columnForTask(t) {
+    // Prefer coarse status when it is already a Kanban column
+    if (t && t.status && COLUMNS.includes(t.status)) return t.status;
+    const stage = normalizeStage(t);
+    return STAGE_TO_COLUMN[stage] || 'inbox';
+  }
+
   function stageLabel(stage) {
     return STAGE_LABELS[stage] || stage;
+  }
+
+  function isCreativeTask(t) {
+    if (!t) return false;
+    if (t.clientId === 'ad-factory') return true;
+    const stage = normalizeStage(t);
+    return CREATIVE_STAGES.has(stage);
   }
 
   function clientName(id) {
@@ -113,8 +155,7 @@
 
   function activeCountFor(clientId) {
     return state.tasks.filter((t) => {
-      const stage = normalizeStage(t);
-      if (stage === 'done') return false;
+      if (columnForTask(t) === 'done') return false;
       if (clientId === 'my-plate') return true;
       return t.clientId === clientId;
     }).length;
@@ -166,21 +207,25 @@
 
   function taskCard(t, opts = {}) {
     const stage = normalizeStage(t);
+    const col = columnForTask(t);
     const progress = t.progress
       ? `<div class="progress">${esc(preview(t.progress, 100))}</div>`
       : '';
-    const showResult = t.result && (HUMAN_STAGES.has(stage) || stage === 'done');
+    const showResult = t.result && (HUMAN_STAGES.has(stage) || col === 'waiting' || col === 'done');
     const result = showResult
       ? `<div class="result-preview">${esc(preview(t.result, 160))}</div>`
       : '';
     const compact = opts.compact ? ' compact' : '';
-    const deleteBtn = opts.showDelete
+    const deleteBtn = opts.showDelete !== false
       ? `<button type="button" class="card-delete" data-delete-id="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>`
       : '';
+    const stageChip = isCreativeTask(t)
+      ? `<span class="${stageChipClass(stage)}">${esc(stageLabel(stage))}</span>`
+      : `<span class="chip">${esc(COLUMN_LABELS[col] || col)}</span>`;
     return `<div class="card-wrap${compact}">
       <button type="button" class="card" data-task-id="${esc(t.id)}">
         <div class="card-meta">
-          <span class="${stageChipClass(stage)}">${esc(stageLabel(stage))}</span>
+          ${stageChip}
           <span class="chip assignee">${esc(t.assignee || 'cos')}</span>
           ${t.clientId && state.currentClientId === 'my-plate' && t.clientId !== 'my-plate'
             ? `<span class="chip">${esc(clientName(t.clientId))}</span>` : ''}
@@ -194,7 +239,8 @@
     </div>`;
   }
 
-  function renderPipelineViz(tasks) {
+  function renderPipelineFlow(el, tasks) {
+    if (!el) return;
     const counts = {};
     for (const s of PIPELINE_STAGES) counts[s] = 0;
     for (const t of tasks) {
@@ -203,8 +249,7 @@
       else counts.research += 1;
     }
 
-    const flow = $('#pipeline-flow');
-    flow.innerHTML = PIPELINE_STAGES.map((s, i) => {
+    el.innerHTML = PIPELINE_STAGES.map((s, i) => {
       const human = HUMAN_STAGES.has(s) ? ' human' : '';
       const done = s === 'done' ? ' done' : '';
       const has = counts[s] > 0 ? ' has-tasks' : '';
@@ -216,6 +261,60 @@
         <span class="pipe-label">${esc(stageLabel(s))}</span>
       </div>${arrow}`;
     }).join('');
+  }
+
+  function renderOverview(tasks) {
+    const overview = $('#overview');
+    const stats = $('#overview-stats');
+    if (state.currentClientId !== 'my-plate') {
+      overview.hidden = true;
+      stats.innerHTML = '';
+      return;
+    }
+
+    const needs = tasks.filter((t) => HUMAN_STAGES.has(normalizeStage(t))).length;
+    const byClient = {};
+    for (const t of tasks) {
+      if (columnForTask(t) === 'done') continue;
+      const id = t.clientId || 'other';
+      byClient[id] = (byClient[id] || 0) + 1;
+    }
+    const clientBits = Object.entries(byClient)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([id, n]) => `<span class="overview-pill"><strong>${esc(clientName(id))}</strong> ${n}</span>`)
+      .join('');
+
+    const stageCounts = {};
+    for (const s of PIPELINE_STAGES) stageCounts[s] = 0;
+    let creativeTotal = 0;
+    for (const t of tasks) {
+      if (!isCreativeTask(t)) continue;
+      creativeTotal += 1;
+      const s = normalizeStage(t);
+      if (stageCounts[s] != null) stageCounts[s] += 1;
+    }
+    const stageBits = creativeTotal
+      ? PIPELINE_STAGES.filter((s) => stageCounts[s] > 0)
+          .map((s) => `<span class="overview-pill stage">${esc(stageLabel(s))} ${stageCounts[s]}</span>`)
+          .join('')
+      : '';
+
+    overview.hidden = false;
+    stats.innerHTML = `
+      <div class="overview-block">
+        <span class="overview-label">Needs you</span>
+        <span class="overview-value${needs ? ' warn' : ''}">${needs}</span>
+      </div>
+      <div class="overview-block grow">
+        <span class="overview-label">Active by client</span>
+        <div class="overview-pills">${clientBits || '<span class="muted small">Nothing active</span>'}</div>
+      </div>
+      ${creativeTotal ? `<div class="overview-block grow">
+        <span class="overview-label">Creative stages</span>
+        <div class="overview-pills">${stageBits}</div>
+      </div>` : ''}
+    `;
   }
 
   function bindCardEvents(root) {
@@ -234,33 +333,43 @@
   function renderBoard() {
     const tasks = visibleTasks();
     const needs = needsYouTasks();
+    const isHome = state.currentClientId === 'my-plate';
+    const isAdFactory = state.currentClientId === 'ad-factory';
+
+    renderOverview(isHome ? state.tasks : tasks);
 
     const needsSection = $('#needs-you');
     const needsList = $('#needs-you-list');
     $('#needs-you-count').textContent = String(needs.length);
+    // Needs-you strip: Home overview of approve_* , or when client has any
     if (!needs.length) {
       needsSection.hidden = true;
       needsList.innerHTML = '';
     } else {
       needsSection.hidden = false;
-      needsList.innerHTML = needs.map((t) => taskCard(t, { compact: true, showDelete: true })).join('');
+      needsList.innerHTML = needs.map((t) => taskCard(t, { compact: true })).join('');
     }
 
-    renderPipelineViz(tasks);
-
-    const sorted = tasks.slice().sort((a, b) => {
-      const ia = PIPELINE_STAGES.indexOf(normalizeStage(a));
-      const ib = PIPELINE_STAGES.indexOf(normalizeStage(b));
-      if (ia !== ib) return ia - ib;
-      return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
-    });
-
-    $('#task-list-count').textContent = String(sorted.length);
-    const list = $('#task-list');
-    if (!sorted.length) {
-      list.innerHTML = '<div class="empty-slot">Nothing on this plate yet. Delegate something.</div>';
+    // Pipeline flow viz ONLY on Ad factory — never as sole Home board
+    const pipeSection = $('#pipeline-viz');
+    if (isAdFactory) {
+      pipeSection.hidden = false;
+      renderPipelineFlow($('#pipeline-flow'), tasks);
     } else {
-      list.innerHTML = sorted.map((t) => taskCard(t, { showDelete: true })).join('');
+      pipeSection.hidden = true;
+      $('#pipeline-flow').innerHTML = '';
+    }
+
+    for (const status of COLUMNS) {
+      const list = tasks.filter((t) => columnForTask(t) === status);
+      const el = $(`#col-${status}`);
+      const countEl = document.querySelector(`[data-count="${status}"]`);
+      if (countEl) countEl.textContent = String(list.length);
+      if (!list.length) {
+        el.innerHTML = '<div class="empty-slot">Nothing here</div>';
+      } else {
+        el.innerHTML = list.map((t) => taskCard(t)).join('');
+      }
     }
 
     bindCardEvents(document);
@@ -291,18 +400,51 @@
     }).join('<span class="track-line"></span>');
   }
 
+  function renderModalPipelineFlow(current) {
+    const wrap = $('#modal-pipeline-flow-wrap');
+    const el = $('#modal-pipeline-flow');
+    el.innerHTML = PIPELINE_STAGES.map((s, i) => {
+      const human = HUMAN_STAGES.has(s) ? ' human' : '';
+      const done = s === 'done' ? ' done' : '';
+      const cur = s === current ? ' has-tasks current-stage' : '';
+      const arrow = i < PIPELINE_STAGES.length - 1
+        ? '<span class="pipe-arrow" aria-hidden="true">→</span>'
+        : '';
+      return `<div class="pipe-step${human}${done}${cur}" data-stage="${esc(s)}">
+        <span class="pipe-label">${esc(stageLabel(s))}</span>
+      </div>${arrow}`;
+    }).join('');
+    wrap.hidden = false;
+  }
+
   function openTask(id) {
     const t = state.taskById.get(id);
     if (!t) return;
     state.currentTaskId = id;
     const stage = normalizeStage(t);
+    const col = columnForTask(t);
+    const creative = isCreativeTask(t);
 
     $('#modal-title').textContent = t.title;
     $('#modal-assignee').textContent = t.assignee || 'cos';
-    $('#modal-stage').textContent = stageLabel(stage);
+    $('#modal-stage').textContent = creative
+      ? stageLabel(stage)
+      : (COLUMN_LABELS[col] || col);
     $('#modal-client').textContent = clientName(t.clientId);
     $('#modal-brief').textContent = t.brief || '';
-    renderModalStageTrack(stage);
+
+    const track = $('#modal-stage-track');
+    const pipeWrap = $('#modal-pipeline-flow-wrap');
+    if (creative) {
+      track.hidden = false;
+      renderModalStageTrack(stage);
+      renderModalPipelineFlow(stage);
+    } else {
+      track.hidden = true;
+      track.innerHTML = '';
+      pipeWrap.hidden = true;
+      $('#modal-pipeline-flow').innerHTML = '';
+    }
 
     const progWrap = $('#modal-progress-wrap');
     if (t.progress) {
@@ -314,14 +456,14 @@
 
     const resWrap = $('#modal-result-wrap');
     const hasDeliverable = !!(t.result || (t.resultLinks && t.resultLinks.length));
-    const showDeliverable = hasDeliverable && (HUMAN_STAGES.has(stage) || stage === 'done' || stage === 'drive_upload');
+    const showDeliverable = hasDeliverable && (HUMAN_STAGES.has(stage) || col === 'waiting' || col === 'done' || stage === 'drive_upload');
     if (showDeliverable) {
       resWrap.hidden = false;
       const label = $('#modal-result-label');
       if (label) {
-        label.textContent = HUMAN_STAGES.has(stage)
+        label.textContent = HUMAN_STAGES.has(stage) || col === 'waiting'
           ? 'What you are approving'
-          : stage === 'done'
+          : col === 'done'
             ? 'Result'
             : 'Deliverable';
       }
@@ -394,10 +536,11 @@
 
   async function loadTasks() {
     const data = await api('/api/tasks');
-    state.tasks = (data.tasks || []).map((t) => ({
-      ...t,
-      stage: normalizeStage(t),
-    }));
+    state.tasks = (data.tasks || []).map((t) => {
+      const stage = normalizeStage(t);
+      const status = COLUMNS.includes(t.status) ? t.status : (STAGE_TO_COLUMN[stage] || 'inbox');
+      return { ...t, stage, status };
+    });
     state.taskById = new Map(state.tasks.map((t) => [t.id, t]));
     renderNav();
     renderBoard();
@@ -539,7 +682,6 @@
     if (!t) return;
     const stage = normalizeStage(t);
     const prev = t.progress ? String(t.progress) + '\n' : '';
-    // Keep in current human stage; just append feedback
     await patchCurrentTask({
       stage,
       progress: prev + 'Feedback: ' + note,

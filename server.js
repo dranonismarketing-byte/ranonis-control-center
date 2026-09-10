@@ -55,7 +55,7 @@ const STATUS_TO_STAGE = {
   done: 'done',
 };
 
-/** Soft reverse map for any consumer still reading status */
+/** Soft reverse map: pipeline stage → Home/client Kanban column (see UX-LAYOUT.md) */
 const STAGE_TO_STATUS = {
   research: 'inbox',
   copywriting: 'cooking',
@@ -65,6 +65,8 @@ const STAGE_TO_STATUS = {
   drive_upload: 'cooking',
   done: 'done',
 };
+
+const KANBAN_COLUMNS = ['inbox', 'cooking', 'waiting', 'done'];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -406,6 +408,7 @@ router.get('/api/health', (_req, res) => {
     service: 'ranonis-control-center',
     basePath: BASE_PATH || '/',
     stages: PIPELINE_STAGES,
+    columns: KANBAN_COLUMNS,
     time: new Date().toISOString(),
   });
 });

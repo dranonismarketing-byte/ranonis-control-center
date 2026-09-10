@@ -38,7 +38,7 @@
     <div class="main-col">
       <header class="board-header">
         <div>
-          <p class="eyebrow" id="board-eyebrow">Pipeline</p>
+          <p class="eyebrow" id="board-eyebrow">Home</p>
           <h1 id="board-title">My plate</h1>
         </div>
         <div class="header-actions">
@@ -47,6 +47,10 @@
       </header>
 
       <div class="main-scroll">
+        <section id="overview" class="overview" aria-label="Overview" hidden>
+          <div class="overview-row" id="overview-stats"></div>
+        </section>
+
         <section id="needs-you" class="needs-you" aria-label="Needs you" hidden>
           <div class="needs-you-head">
             <h2>Needs you</h2>
@@ -55,20 +59,43 @@
           <div id="needs-you-list" class="needs-you-list"></div>
         </section>
 
-        <section class="pipeline-viz" aria-label="Pipeline stages">
+        <section id="pipeline-viz" class="pipeline-viz" aria-label="Creative pipeline" hidden>
           <div class="pipeline-viz-head">
-            <h2>Pipeline</h2>
-            <p class="muted small">How work moves from research to done</p>
+            <h2>Creative pipeline</h2>
+            <p class="muted small">Ad factory stages — not your personal board</p>
           </div>
           <div id="pipeline-flow" class="pipeline-flow"></div>
         </section>
 
-        <section class="task-board" aria-label="Tasks">
-          <div class="task-board-head">
-            <h2>Tasks</h2>
-            <span class="count" id="task-list-count">0</span>
+        <section class="kanban" aria-label="Kanban board">
+          <div class="column" data-status="inbox">
+            <div class="column-head">
+              <h2>Inbox</h2>
+              <span class="count" data-count="inbox">0</span>
+            </div>
+            <div class="column-body" id="col-inbox"></div>
           </div>
-          <div id="task-list" class="task-list"></div>
+          <div class="column" data-status="cooking">
+            <div class="column-head">
+              <h2>Cooking</h2>
+              <span class="count" data-count="cooking">0</span>
+            </div>
+            <div class="column-body" id="col-cooking"></div>
+          </div>
+          <div class="column" data-status="waiting">
+            <div class="column-head">
+              <h2>Waiting on you</h2>
+              <span class="count" data-count="waiting">0</span>
+            </div>
+            <div class="column-body" id="col-waiting"></div>
+          </div>
+          <div class="column" data-status="done">
+            <div class="column-head">
+              <h2>Done</h2>
+              <span class="count" data-count="done">0</span>
+            </div>
+            <div class="column-body" id="col-done"></div>
+          </div>
         </section>
       </div>
     </div>
@@ -97,7 +124,11 @@
       </header>
       <div class="modal-body">
         <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-stage"></span> · <span id="modal-client"></span></p>
-        <div id="modal-stage-track" class="modal-stage-track" aria-hidden="true"></div>
+        <div id="modal-stage-track" class="modal-stage-track" hidden></div>
+        <div id="modal-pipeline-flow-wrap" class="modal-pipeline-wrap" hidden>
+          <h3>Creative pipeline</h3>
+          <div id="modal-pipeline-flow" class="pipeline-flow compact"></div>
+        </div>
         <h3>Brief</h3>
         <pre id="modal-brief" class="block-text"></pre>
         <div id="modal-progress-wrap" hidden>

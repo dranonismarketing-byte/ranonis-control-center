@@ -248,10 +248,65 @@ input:focus, textarea:focus, select:focus {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 16px 24px;
+  padding: 14px 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+}
+
+/* ——— Overview (Home thin strip) ——— */
+.overview {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.overview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-start;
+}
+.overview-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 88px;
+}
+.overview-block.grow { flex: 1 1 180px; }
+.overview-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+.overview-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.overview-value.warn { color: var(--warn); }
+.overview-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.overview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+.overview-pill.stage {
+  background: var(--accent-soft);
+  border-color: #c9d7f8;
+  color: var(--accent-dim);
 }
 
 /* ——— Needs you strip ——— */
@@ -260,6 +315,7 @@ input:focus, textarea:focus, select:focus {
   border: 1px solid #f0d4a0;
   border-radius: 14px;
   padding: 10px 12px 12px;
+  flex: 0 0 auto;
 }
 .needs-you-head {
   display: flex;
@@ -275,8 +331,7 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: .04em;
   color: var(--warn);
 }
-.needs-you-head .count,
-.task-board-head .count {
+.needs-you-head .count {
   font-size: 11px;
   font-weight: 700;
   color: var(--muted);
@@ -292,17 +347,18 @@ input:focus, textarea:focus, select:focus {
   padding-bottom: 2px;
 }
 .needs-you-list .card-wrap {
-  min-width: 260px;
-  max-width: 320px;
+  min-width: 240px;
+  max-width: 300px;
   flex: 0 0 auto;
 }
 
-/* ——— Pipeline visualization ——— */
+/* ——— Pipeline visualization (Ad factory / modal only) ——— */
 .pipeline-viz {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px 16px 16px;
+  padding: 12px 14px 14px;
+  flex: 0 0 auto;
 }
 .pipeline-viz-head h2 {
   margin: 0 0 2px;
@@ -312,30 +368,38 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: .04em;
   color: var(--muted);
 }
-.pipeline-viz-head .muted { margin: 0 0 12px; }
+.pipeline-viz-head .muted { margin: 0 0 10px; }
 .pipeline-flow {
   display: flex;
   align-items: stretch;
   gap: 0;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
+.pipeline-flow.compact .pipe-step {
+  min-width: 64px;
+  padding: 6px 6px;
+}
+.pipeline-flow.compact .pipe-count { display: none; }
 .pipe-step {
   flex: 1 1 0;
-  min-width: 88px;
+  min-width: 80px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 10px 8px;
+  padding: 8px 6px;
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
 }
 .pipe-step.has-tasks {
   background: var(--accent-soft);
   border-color: #c9d7f8;
+}
+.pipe-step.current-stage {
+  box-shadow: 0 0 0 2px rgba(59, 110, 245, 0.25);
 }
 .pipe-step.human {
   background: var(--warn-bg);
@@ -349,7 +413,7 @@ input:focus, textarea:focus, select:focus {
   border-color: #b7e0c6;
 }
 .pipe-count {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.1;
   color: var(--text);
@@ -365,27 +429,45 @@ input:focus, textarea:focus, select:focus {
 .pipe-arrow {
   flex: 0 0 auto;
   align-self: center;
-  padding: 0 4px;
+  padding: 0 3px;
   color: var(--border-strong);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
-/* ——— Task list ——— */
-.task-board {
+.modal-pipeline-wrap {
+  margin: 0 0 12px;
+}
+.modal-pipeline-wrap h3 {
+  margin: 0 0 8px;
+}
+
+/* ——— Kanban (primary board) ——— */
+.kanban {
+  flex: 1;
+  min-height: 280px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.column {
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 200px;
 }
-.task-board-head {
+.column-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  padding: 0 4px;
+  padding: 12px 12px 8px;
 }
-.task-board-head h2 {
+.column-head h2 {
   margin: 0;
   font-size: .82rem;
   font-weight: 700;
@@ -393,7 +475,19 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: .04em;
   color: var(--muted);
 }
-.task-list {
+.column-head .count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.column-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -415,7 +509,7 @@ input:focus, textarea:focus, select:focus {
   background: transparent;
   color: var(--muted);
   border-radius: 0 12px 12px 0;
-  padding: 0 12px;
+  padding: 0 10px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
@@ -732,6 +826,11 @@ input:focus, textarea:focus, select:focus {
   }
   .client-item { width: auto; }
   .main-scroll { overflow: visible; }
+  .kanban {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+  .column { min-height: 160px; }
   .pipe-step { min-width: 72px; }
   .chat-panel { max-height: none; }
   .modal-foot { flex-wrap: wrap; }
