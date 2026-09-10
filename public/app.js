@@ -34,18 +34,18 @@
     copywriting: 'Writing copy',
     approve_copy: 'Needs your OK on copy',
     static_production: 'Making ad images',
-    approve_statics: 'Needs your OK on images',
+    approve_statics: 'Needs your OK on ads',
     drive_upload: 'Uploading',
     done: 'Done',
   };
 
-  /** Shorter labels for the ad-steps strip */
+  /** Shorter labels for step dots */
   const STAGE_SHORT_LABELS = {
     research: 'Inbox',
     copywriting: 'Writing',
     approve_copy: 'OK copy',
     static_production: 'Ad images',
-    approve_statics: 'OK images',
+    approve_statics: 'OK ads',
     drive_upload: 'Upload',
     done: 'Done',
   };
@@ -169,7 +169,27 @@
     return false;
   }
 
-  /** Merge images[] with image-looking resultLinks (by URL). */
+  function isFakeSampleImage(url) {
+    const u = String(url || '').trim().toLowerCase();
+    return !u || u.includes('sample-ad.jpg') || u.includes('/sample-ad');
+  }
+
+  /** Truth: only real https://drive.google.com links. */
+  function isRealDriveUrl(url) {
+    const u = String(url || '').trim();
+    if (!u) return false;
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== 'https:') return false;
+      if (parsed.hostname !== 'drive.google.com') return false;
+      if (/\/example|placeholder|sample|test-folder|your-folder/i.test(u)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Merge images[] with image-looking resultLinks (by URL). Never include sample-ad. */
   function collectTaskImages(t) {
     const byUrl = new Map();
     const push = (raw, idx) => {
@@ -187,7 +207,7 @@
         id = String(raw.id || ('img-' + idx));
         note = raw.note != null ? String(raw.note) : '';
       }
-      if (!url) return;
+      if (!url || isFakeSampleImage(url)) return;
       if (!byUrl.has(url)) byUrl.set(url, { id, url, status, note });
     };
     (t.images || []).forEach((img, i) => push(img, i));
@@ -288,11 +308,12 @@
     const statusCls = HUMAN_STAGES.has(stage)
       ? 'card-status human'
       : (stage === 'done' || col === 'done' ? 'card-status done' : 'card-status');
+    const dots = isCreativeTask(t) ? cardStepDots(stage) : '';
     return `<div class="card-wrap${compact}">
       <button type="button" class="card" data-task-id="${esc(t.id)}">
         <p class="${statusCls}">${esc(status)}</p>
+        ${dots}
         <div class="card-meta">
-          <span class="chip assignee">${esc(t.assignee || 'cos')}</span>
           ${t.clientId && state.currentClientId === 'my-plate' && t.clientId !== 'my-plate'
             ? `<span class="chip">${esc(clientName(t.clientId))}</span>` : ''}
         </div>
@@ -303,6 +324,17 @@
       </button>
       ${deleteBtn}
     </div>`;
+  }
+
+  function cardStepDots(current) {
+    const idx = PIPELINE_STAGES.indexOf(current);
+    return `<div class="card-dots" aria-hidden="true">${PIPELINE_STAGES.map((s, i) => {
+      let cls = 'dot';
+      if (i < idx) cls += ' past';
+      if (i === idx) cls += ' current';
+      if (HUMAN_STAGES.has(s)) cls += ' human';
+      return `<span class="${cls}"></span>`;
+    }).join('')}</div>`;
   }
 
   function renderPipelineFlow(el, tasks) {
@@ -366,16 +398,21 @@
           .join('')
       : '';
 
+    if (!needs && !clientBits && !creativeTotal) {
+      overview.hidden = true;
+      stats.innerHTML = '';
+      return;
+    }
     overview.hidden = false;
     stats.innerHTML = `
-      <div class="overview-block">
+      ${needs ? `<div class="overview-block">
         <span class="overview-label">Needs you</span>
-        <span class="overview-value${needs ? ' warn' : ''}">${needs}</span>
-      </div>
-      <div class="overview-block grow">
-        <span class="overview-label">Open work by client</span>
-        <div class="overview-pills">${clientBits || '<span class="muted small">Nothing active</span>'}</div>
-      </div>
+        <span class="overview-value warn">${needs}</span>
+      </div>` : ''}
+      ${clientBits ? `<div class="overview-block grow">
+        <span class="overview-label">Open</span>
+        <div class="overview-pills">${clientBits}</div>
+      </div>` : ''}
       ${creativeTotal ? `<div class="overview-block grow">
         <span class="overview-label">Ad work</span>
         <div class="overview-pills">${stageBits}</div>
@@ -416,14 +453,12 @@
       needsList.innerHTML = needs.map((t) => taskCard(t, { compact: true })).join('');
     }
 
-    // Pipeline flow viz ONLY on Ad factory — never as sole Home board
+    // Quiet UI: no board-level pipeline strip — step dots live on creative cards only
     const pipeSection = $('#pipeline-viz');
-    if (isAdFactory) {
-      pipeSection.hidden = false;
-      renderPipelineFlow($('#pipeline-flow'), tasks);
-    } else {
+    if (pipeSection) {
       pipeSection.hidden = true;
-      $('#pipeline-flow').innerHTML = '';
+      const flow = $('#pipeline-flow');
+      if (flow) flow.innerHTML = '';
     }
 
     for (const status of COLUMNS) {
@@ -504,8 +539,8 @@
     // Per-image OK / Send back on image-work stages (dogfood: must be visible, not image-only)
     const reviewable = stage === 'approve_statics' || stage === 'static_production';
     $('#modal-gallery-hint').textContent = reviewable
-      ? 'OK or send back each ad image here — no need to leave.'
-      : 'Ad images on this card. Per-image OK shows when they are ready for your look.';
+      ? 'OK or send back each ad image.'
+      : 'Ad images on this card.';
     gallery.innerHTML = images.map((img) => {
       const st = imageStatusLabel(img.status);
       const key = esc(img.id || img.url);
@@ -538,21 +573,25 @@
   }
 
   function renderModalDrive(t) {
+    const wrap = $('#modal-drive-wrap');
     const url = (t.driveUrl || '').trim();
     const view = $('#modal-drive-view');
     const edit = $('#modal-drive-edit');
     const addBtn = $('#modal-drive-add-btn');
     edit.hidden = true;
-    if (url) {
-      view.hidden = false;
-      addBtn.hidden = true;
-      const a = $('#modal-drive-link');
-      a.href = url;
-      a.textContent = 'Open Google Drive folder';
-    } else {
+    // Truth: never show Drive row unless real https://drive.google.com link
+    if (!isRealDriveUrl(url)) {
+      if (wrap) wrap.hidden = true;
       view.hidden = true;
-      addBtn.hidden = false;
+      if (addBtn) addBtn.hidden = true;
+      return;
     }
+    if (wrap) wrap.hidden = false;
+    view.hidden = false;
+    if (addBtn) addBtn.hidden = true;
+    const a = $('#modal-drive-link');
+    a.href = url;
+    a.textContent = 'Open Google Drive folder';
   }
 
   async function setImageStatus(key, status) {
@@ -591,12 +630,15 @@
     if (creative) {
       track.hidden = false;
       renderModalStageTrack(stage);
-      renderModalPipelineFlow(stage);
     } else {
       track.hidden = true;
       track.innerHTML = '';
+    }
+    // Quiet: no labeled pipeline strip in modal
+    if (pipeWrap) {
       pipeWrap.hidden = true;
-      $('#modal-pipeline-flow').innerHTML = '';
+      const el = $('#modal-pipeline-flow');
+      if (el) el.innerHTML = '';
     }
 
     const progWrap = $('#modal-progress-wrap');
@@ -655,13 +697,16 @@
     feedbackBtn.hidden = !isHuman;
 
     if (stage === 'approve_copy') {
-      approveBtn.textContent = 'Approve copy → make statics';
+      approveBtn.textContent = 'OK copy';
+      approveBtn.dataset.marker = 'ok-copy';
       rejectBtn.textContent = 'Send back to writing';
     } else if (stage === 'approve_statics') {
-      approveBtn.textContent = 'Approve images → upload';
+      approveBtn.textContent = 'OK ads';
+      approveBtn.dataset.marker = 'ok-ads';
       rejectBtn.textContent = 'Send back to image work';
     } else {
-      approveBtn.textContent = 'Approve';
+      approveBtn.textContent = 'OK';
+      approveBtn.dataset.marker = 'ok-action';
       rejectBtn.textContent = 'Send back';
     }
 
@@ -904,6 +949,10 @@
   });
   $('#modal-drive-save-btn').addEventListener('click', async () => {
     const url = $('#modal-drive-input').value.trim();
+    if (url && !isRealDriveUrl(url)) {
+      flashModalOk('Need a real https://drive.google.com link');
+      return;
+    }
     try {
       await patchCurrentTask({ driveUrl: url });
       const updated = state.taskById.get(state.currentTaskId);
@@ -924,16 +973,30 @@
     let note;
     if (stage === 'approve_copy') {
       next = 'static_production';
-      note = 'Copy OK — now making statics';
+      note = 'Copy OK — making ad images';
     } else if (stage === 'approve_statics') {
+      const imgs = collectTaskImages(t);
+      const driveOk = isRealDriveUrl(t.driveUrl);
+      if (!imgs.length || !driveOk) {
+        flashModalOk(
+          !imgs.length
+            ? 'Need real ad images before OK ads'
+            : 'Need a real Google Drive folder link before upload'
+        );
+        return;
+      }
       next = 'drive_upload';
-      note = 'Images OK — uploading';
+      note = 'Ads OK — uploading';
     } else {
       return;
     }
-    await patchCurrentTask({ stage: next, progress: note });
-    flashModalOk(note);
-    setTimeout(closeTaskModal, 450);
+    try {
+      await patchCurrentTask({ stage: next, progress: note });
+      flashModalOk(note);
+      setTimeout(closeTaskModal, 450);
+    } catch (err) {
+      flashModalOk(err.message || 'Could not update');
+    }
   });
 
   $('#task-reject-btn').addEventListener('click', async () => {

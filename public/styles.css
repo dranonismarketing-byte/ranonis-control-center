@@ -248,18 +248,18 @@ input:focus, textarea:focus, select:focus {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 16px 18px;
+  padding: 22px 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
 }
 
 /* ——— Overview (Home thin strip) ——— */
 .overview {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 2px 0 4px;
 }
 .overview-row {
   display: flex;
@@ -311,10 +311,10 @@ input:focus, textarea:focus, select:focus {
 
 /* ——— Needs you strip ——— */
 .needs-you {
-  background: var(--warn-bg);
-  border: 1px solid #f0d4a0;
-  border-radius: 14px;
-  padding: 10px 12px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 0 8px;
   flex: 0 0 auto;
 }
 .needs-you-head {
@@ -325,11 +325,11 @@ input:focus, textarea:focus, select:focus {
 }
 .needs-you-head h2 {
   margin: 0;
-  font-size: .82rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--warn);
+  font-size: .9rem;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
 }
 .needs-you-head .count {
   font-size: 11px;
@@ -445,10 +445,10 @@ input:focus, textarea:focus, select:focus {
 /* ——— Kanban (primary board) ——— */
 .kanban {
   flex: 1;
-  min-height: 280px;
+  min-height: 320px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+  gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -487,10 +487,10 @@ input:focus, textarea:focus, select:focus {
 .column-body {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 10px 12px;
+  padding: 6px 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .card-wrap {
@@ -531,13 +531,40 @@ input:focus, textarea:focus, select:focus {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px;
+  padding: 16px 16px 14px;
   box-shadow: 0 1px 2px rgba(20, 28, 45, 0.04);
   cursor: pointer;
   text-align: left;
   width: 100%;
   font: inherit;
   color: inherit;
+}
+
+/* Minimal step dots — only on creative cards */
+.card-dots {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 10px;
+  align-items: center;
+}
+.card-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  opacity: 0.45;
+}
+.card-dots .dot.past {
+  background: var(--accent);
+  opacity: 0.55;
+}
+.card-dots .dot.current {
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.15);
+}
+.card-dots .dot.human.current {
+  background: var(--warn);
 }
 .card-wrap:hover .card {
   border-color: var(--border-strong);
@@ -997,3 +1024,21 @@ input:focus, textarea:focus, select:focus {
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+
+
+/* Quiet extras */
+.card-meta:empty { display: none; }
+.modal-body h3 {
+  font-size: .78rem;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+.modal-body .meta-row { margin-bottom: 10px; }
+.drive-wrap[hidden],
+.gallery-wrap[hidden],
+.needs-you[hidden],
+.overview[hidden],
+.pipeline-viz[hidden] { display: none !important; }

@@ -51,7 +51,7 @@
           <div class="overview-row" id="overview-stats"></div>
         </section>
 
-        <section id="needs-you" class="needs-you" aria-label="Needs you" hidden>
+        <section id="needs-you" class="needs-you" data-marker="needs-you" aria-label="Needs you" hidden>
           <div class="needs-you-head">
             <h2>Needs you</h2>
             <span class="count" id="needs-you-count">0</span>
@@ -60,10 +60,6 @@
         </section>
 
         <section id="pipeline-viz" class="pipeline-viz" aria-label="Ad steps" hidden>
-          <div class="pipeline-viz-head">
-            <h2>Ad steps</h2>
-            <p class="muted small">Where Ad factory work is — not your whole board</p>
-          </div>
           <div id="pipeline-flow" class="pipeline-flow"></div>
         </section>
 
@@ -128,7 +124,6 @@
         <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-stage"></span> · <span id="modal-client"></span></p>
         <div id="modal-stage-track" class="modal-stage-track" hidden></div>
         <div id="modal-pipeline-flow-wrap" class="modal-pipeline-wrap" hidden>
-          <h3>Where this is</h3>
           <div id="modal-pipeline-flow" class="pipeline-flow compact"></div>
         </div>
         <h3>Brief</h3>
@@ -144,10 +139,10 @@
         </div>
         <div id="modal-gallery-wrap" class="gallery-wrap" hidden>
           <h3>Ad images</h3>
-          <p class="muted small" id="modal-gallery-hint">OK or send back each image here — no need to leave.</p>
+          <p class="muted small" id="modal-gallery-hint">OK or send back each ad image.</p>
           <div id="modal-gallery" class="image-gallery"></div>
         </div>
-        <div id="modal-drive-wrap" class="drive-wrap">
+        <div id="modal-drive-wrap" class="drive-wrap" hidden>
           <h3>Google Drive folder</h3>
           <div id="modal-drive-view" class="drive-view" hidden>
             <a id="modal-drive-link" href="#" target="_blank" rel="noopener">Open folder</a>
@@ -161,7 +156,7 @@
               <button type="button" class="btn primary" id="modal-drive-save-btn">Save link</button>
             </div>
           </div>
-          <button type="button" class="btn ghost" id="modal-drive-add-btn">Add Google Drive folder link</button>
+          <button type="button" class="btn ghost" id="modal-drive-add-btn" hidden>Add Google Drive folder link</button>
         </div>
         <div id="modal-feedback-wrap" class="feedback-wrap" hidden>
           <label for="modal-feedback">Note</label>
@@ -175,7 +170,7 @@
         <button type="button" class="btn ghost" id="task-reject-btn" hidden>Send back</button>
         <button type="button" class="btn ghost" id="task-feedback-btn" hidden>Add a note</button>
         <button type="button" class="btn primary" id="task-ready-btn" hidden>Ready for my review</button>
-        <button type="button" class="btn primary" id="task-approve-btn" hidden>Approve</button>
+        <button type="button" class="btn primary" id="task-approve-btn" data-marker="ok-action" hidden>OK copy</button>
       </footer>
     </div>
   </dialog>

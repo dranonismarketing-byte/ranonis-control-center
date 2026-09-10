@@ -129,20 +129,78 @@ function normalizeImages(list) {
   const out = [];
   list.forEach((raw, idx) => {
     const entry = normalizeImageEntry(raw, idx);
-    if (entry) out.push(entry);
+    if (entry && !isFakeSampleImage(entry.url)) out.push(entry);
   });
   return out;
 }
 
+/** Truth: only real Google Drive folder/file links count. */
+function isRealDriveUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return false;
+  try {
+    const parsed = new URL(u);
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.hostname !== 'drive.google.com') return false;
+    // Reject obvious placeholders
+    if (/\/example|placeholder|sample|test-folder|your-folder/i.test(u)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isFakeSampleImage(url) {
+  const u = String(url || '').trim().toLowerCase();
+  if (!u) return true;
+  return u.includes('sample-ad.jpg') || u.includes('/sample-ad');
+}
+
+function hasRealImages(images) {
+  return normalizeImages(images).length > 0;
+}
+
+function looksLikeUploadingProgress(progress) {
+  return /\bupload(ing|ed)?\b/i.test(String(progress || ''));
+}
+
+/**
+ * Stages drive_upload / done, and "uploading" progress, require real images + real Drive URL.
+ * Returns error string or null.
+ */
+function truthViolation(stage, images, driveUrl, progress) {
+  const imgs = normalizeImages(images);
+  const driveOk = isRealDriveUrl(driveUrl);
+  const stageKey = normalizeStage(stage);
+  if ((stageKey === 'drive_upload' || stageKey === 'done') && (!imgs.length || !driveOk)) {
+    return 'drive_upload/done require real ad images and a real https://drive.google.com link';
+  }
+  if (looksLikeUploadingProgress(progress) && (!imgs.length || !driveOk)) {
+    return 'progress cannot claim uploading without real ad images and a real Drive link';
+  }
+  if (driveUrl != null && String(driveUrl).trim() && !driveOk) {
+    return 'driveUrl must be empty or a real https://drive.google.com link';
+  }
+  return null;
+}
+
+function sanitizeDriveUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return '';
+  return isRealDriveUrl(u) ? u : '';
+}
+
 function publicTask(t) {
   const stage = normalizeStage(t.stage, t.status);
+  const images = normalizeImages(t.images);
+  const driveUrl = sanitizeDriveUrl(t.driveUrl);
   return {
     ...t,
     stage,
     status: statusFromStage(stage),
     resultLinks: Array.isArray(t.resultLinks) ? t.resultLinks.map(String) : [],
-    images: normalizeImages(t.images),
-    driveUrl: t.driveUrl != null ? String(t.driveUrl) : '',
+    images,
+    driveUrl,
   };
 }
 
@@ -268,10 +326,23 @@ function migrateChatOnce() {
 
 const LOCKED_PT_LINES_ID = 'locked-pt-house-lines-20260910';
 
+/**
+ * Seed PT card only on a brand-new empty board.
+ * Never resurrect after delete — lockedPtSeeded stays true forever once set.
+ */
 function ensureLockedBoardCards() {
   const taskData = readJson(TASKS_FILE, { tasks: [] });
-  const tasks = taskData.tasks || [];
-  if (!tasks.some((t) => t.id === LOCKED_PT_LINES_ID)) {
+  const tasks = Array.isArray(taskData.tasks) ? taskData.tasks : [];
+  const hasCard = tasks.some((t) => t.id === LOCKED_PT_LINES_ID);
+
+  if (taskData.lockedPtSeeded) {
+    // Chat sync note only while the live card still exists
+    if (hasCard) syncLockedChatNotes();
+    return;
+  }
+
+  // Fresh empty install only — never recreate if volume already has other tasks
+  if (!hasCard && tasks.length === 0) {
     const now = new Date().toISOString();
     const result = [
       'Possible Training house-permission lines (for the ad image).',
@@ -289,52 +360,56 @@ function ensureLockedBoardCards() {
       '10. Unlock indoor handle work.',
       '',
       'Next: make 10 ad images, then OK them here.',
-    ].join('\n');
+    ].join('\\n');
     tasks.unshift({
       id: LOCKED_PT_LINES_ID,
       title: 'PT house-permission — 10 ad lines (need your OK)',
       brief:
-        'House-permission angle for Possible Training Train At Home Regulation. Short Obvi/IM8-style on-image lines. Research locked. Synced from CoS chat 2026-09-10.',
+        'House-permission angle for Possible Training Train At Home Regulation. Short Obvi/IM8-style on-image lines. Synced from chat 2026-09-10.',
       clientId: 'impossible-training',
       assignee: 'cos',
       priority: 'high',
       stage: 'approve_copy',
       status: 'waiting',
-      progress: 'Lines ready with Donatas. Needs your OK on copy, then 10 ad images.',
+      progress: 'Lines ready. Needs your OK on copy, then 10 ad images.',
       result,
       resultLinks: [],
+      images: [],
+      driveUrl: '',
       example: false,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
     });
     taskData.tasks = tasks;
-    writeJson(TASKS_FILE, taskData);
-  } else {
-    // Ensure existing locked card has pipeline stage
+  } else if (hasCard) {
     const idx = tasks.findIndex((t) => t.id === LOCKED_PT_LINES_ID);
     if (idx >= 0) {
       const t = tasks[idx];
+      // Strip fake sample assets if any
+      t.images = normalizeImages(t.images).filter((img) => !isFakeSampleImage(img.url));
+      t.driveUrl = sanitizeDriveUrl(t.driveUrl);
       if (!t.stage || !VALID_STAGES.has(t.stage)) {
         t.stage = normalizeStage(t.stage, t.status || 'waiting');
         t.status = statusFromStage(t.stage);
-        taskData.tasks = tasks;
-        writeJson(TASKS_FILE, taskData);
       }
+      taskData.tasks = tasks;
     }
   }
 
-  const chatData = readJson(CHAT_FILE, { threads: {} });
-  if (!chatData.threads) chatData.threads = {};
+  taskData.lockedPtSeeded = true;
+  writeJson(TASKS_FILE, taskData);
+  if (tasks.some((t) => t.id === LOCKED_PT_LINES_ID)) syncLockedChatNotes();
+}
+
+function syncLockedChatNotes() {
+  const chatData = readChat();
   const note =
     'Board note: 10 PT house-permission ad lines are on Impossible Training and need your OK on copy. Send a chat message anytime — I reply when free.';
   for (const key of ['cos', 'impossible-training']) {
-    if (!chatData.threads[key] || !Array.isArray(chatData.threads[key].messages)) {
-      chatData.threads[key] = { messages: [] };
-    }
-    const msgs = chatData.threads[key].messages;
-    if (!msgs.some((m) => m.syncNote === LOCKED_PT_LINES_ID)) {
-      msgs.push({
+    const thread = ensureThread(chatData, key);
+    if (!thread.messages.some((m) => m.syncNote === LOCKED_PT_LINES_ID)) {
+      thread.messages.push({
         id: uuidv4(),
         role: 'cos',
         text: note,
@@ -347,10 +422,59 @@ function ensureLockedBoardCards() {
   writeJson(CHAT_FILE, chatData);
 }
 
+/** Demote lying stages / strip fake Drive + sample images on boot. */
+function scrubLyingTasks() {
+  const data = readTasks();
+  let changed = false;
+  data.tasks = (data.tasks || []).map((t) => {
+    const images = normalizeImages(t.images).filter((img) => !isFakeSampleImage(img.url));
+    const driveUrl = sanitizeDriveUrl(t.driveUrl);
+    let stage = normalizeStage(t.stage, t.status);
+    let progress = t.progress != null ? String(t.progress) : '';
+    let touched = false;
+
+    if (images.length !== (Array.isArray(t.images) ? t.images.length : 0)) touched = true;
+    if (driveUrl !== String(t.driveUrl || '').trim()) touched = true;
+
+    if ((stage === 'drive_upload' || stage === 'done') && (!images.length || !isRealDriveUrl(driveUrl))) {
+      // Honest fallback: images exist → waiting for OK on ads; else making images / writing
+      if (images.length) stage = 'approve_statics';
+      else if (t.result && String(t.result).trim()) stage = 'static_production';
+      else stage = 'copywriting';
+      touched = true;
+    }
+    if (looksLikeUploadingProgress(progress) && (!images.length || !isRealDriveUrl(driveUrl))) {
+      progress = images.length
+        ? 'Ad images ready — waiting for a real Drive folder link'
+        : 'No real ad images yet';
+      touched = true;
+    }
+
+    if (!touched) return t;
+    changed = true;
+    return {
+      ...t,
+      images,
+      driveUrl,
+      stage,
+      status: statusFromStage(stage),
+      progress,
+      completedAt: stage === 'done' ? (t.completedAt || t.updatedAt || new Date().toISOString()) : null,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+  if (!data.lockedPtSeeded) {
+    data.lockedPtSeeded = true;
+    changed = true;
+  }
+  if (changed) writeJson(TASKS_FILE, data);
+}
+
 function ensureBootData() {
   migrateTasksOnce();
   migrateChatOnce();
   ensureLockedBoardCards();
+  scrubLyingTasks();
 }
 
 ensureBootData();
@@ -633,6 +757,19 @@ router.post('/api/tasks', requireApiAccess, (req, res) => {
 
   const assignee = body.assignee != null ? String(body.assignee).trim() || 'cos' : 'cos';
   const now = new Date().toISOString();
+  const images = normalizeImages(body.images);
+  let driveUrl = body.driveUrl != null ? String(body.driveUrl).trim() : '';
+  if (driveUrl && !isRealDriveUrl(driveUrl)) {
+    return res.status(400).json({
+      error: 'driveUrl must be empty or a real https://drive.google.com link',
+    });
+  }
+  const progress = body.progress != null ? String(body.progress) : '';
+  const createViolation = truthViolation(stage, images, driveUrl, progress);
+  if (createViolation) {
+    return res.status(400).json({ error: createViolation });
+  }
+
   const task = {
     id: uuidv4(),
     title,
@@ -643,9 +780,9 @@ router.post('/api/tasks', requireApiAccess, (req, res) => {
     status: statusFromStage(stage),
     result: '',
     resultLinks: Array.isArray(body.resultLinks) ? body.resultLinks.map(String) : [],
-    images: normalizeImages(body.images),
-    driveUrl: body.driveUrl != null ? String(body.driveUrl).trim() : '',
-    progress: body.progress != null ? String(body.progress) : '',
+    images,
+    driveUrl,
+    progress,
     priority: body.priority ? String(body.priority).toLowerCase() : 'medium',
     createdAt: now,
     updatedAt: now,
@@ -696,9 +833,19 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
   }
   if (body.images !== undefined) {
     task.images = normalizeImages(body.images);
+  } else {
+    task.images = normalizeImages(task.images);
   }
   if (body.driveUrl !== undefined) {
-    task.driveUrl = String(body.driveUrl || '').trim();
+    const raw = String(body.driveUrl || '').trim();
+    if (raw && !isRealDriveUrl(raw)) {
+      return res.status(400).json({
+        error: 'driveUrl must be empty or a real https://drive.google.com link',
+      });
+    }
+    task.driveUrl = raw;
+  } else {
+    task.driveUrl = sanitizeDriveUrl(task.driveUrl);
   }
   if (body.title !== undefined) task.title = String(body.title).trim();
   if (body.brief !== undefined) task.brief = String(body.brief).trim();
@@ -722,6 +869,11 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
   // Ensure stage always present
   task.stage = normalizeStage(task.stage, task.status);
   task.status = statusFromStage(task.stage);
+
+  const violation = truthViolation(task.stage, task.images, task.driveUrl, task.progress);
+  if (violation) {
+    return res.status(400).json({ error: violation });
+  }
 
   task.updatedAt = new Date().toISOString();
   data.tasks[idx] = task;
