@@ -162,9 +162,79 @@ function migrateChatOnce() {
   writeJson(CHAT_FILE, { threads, migratedV2: true });
 }
 
+
+const LOCKED_PT_LINES_ID = 'locked-pt-house-lines-20260910';
+
+function ensureLockedBoardCards() {
+  const taskData = readJson(TASKS_FILE, { tasks: [] });
+  const tasks = taskData.tasks || [];
+  if (!tasks.some((t) => t.id === LOCKED_PT_LINES_ID)) {
+    const now = new Date().toISOString();
+    const result = [
+      'LOCKED — Possible Training house-permission static lines (on-image).',
+      'Angle: want indoor handle reps; real ball banned for noise.',
+      '',
+      '1. Not in the house. Until now.',
+      '2. Indoor dribbles. No floor fight.',
+      '3. Quiet enough for hardwood.',
+      '4. Handle reps the house allows.',
+      '5. Real bounce. Neighbor-safe.',
+      '6. Practice inside. Keep the peace.',
+      '7. The ban was the bounce.',
+      '8. Hallway handles. No slam.',
+      '9. Loud ball stays outside.',
+      '10. Unlock indoor handle work.',
+      '',
+      'Next: Donatas makes 10 statics with another AI. Then approve/reject here.',
+    ].join('\n');
+    tasks.unshift({
+      id: LOCKED_PT_LINES_ID,
+      title: 'PT house-permission — 10 locked static lines',
+      brief:
+        'House-permission angle for Possible Training Train At Home Regulation. Short Obvi/IM8-style on-image lines. Research locked. Synced from CoS chat 2026-09-10.',
+      clientId: 'impossible-training',
+      assignee: 'cos',
+      priority: 'high',
+      status: 'waiting',
+      progress: 'Lines locked with Donatas. Waiting on 10 static creatives (external AI).',
+      result,
+      resultLinks: [],
+      example: false,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    });
+    taskData.tasks = tasks;
+    writeJson(TASKS_FILE, taskData);
+  }
+
+  const chatData = readJson(CHAT_FILE, { threads: {} });
+  if (!chatData.threads) chatData.threads = {};
+  const note =
+    'Board sync: locked 10 PT house-permission static lines are on Impossible Training → Waiting on you. Chat auto-acks; I poll and reply from CoS. Deep work still fine in Grok Bot — I will mirror decisions here.';
+  for (const key of ['cos', 'impossible-training']) {
+    if (!chatData.threads[key] || !Array.isArray(chatData.threads[key].messages)) {
+      chatData.threads[key] = { messages: [] };
+    }
+    const msgs = chatData.threads[key].messages;
+    if (!msgs.some((m) => m.syncNote === LOCKED_PT_LINES_ID)) {
+      msgs.push({
+        id: uuidv4(),
+        role: 'cos',
+        text: note,
+        at: new Date().toISOString(),
+        clientId: key,
+        syncNote: LOCKED_PT_LINES_ID,
+      });
+    }
+  }
+  writeJson(CHAT_FILE, chatData);
+}
+
 function ensureBootData() {
   migrateTasksOnce();
   migrateChatOnce();
+  ensureLockedBoardCards();
 }
 
 ensureBootData();
@@ -313,6 +383,15 @@ router.post('/api/chat', requireUiAuth, (req, res) => {
     clientId: key,
   };
   thread.messages.push(msg);
+  thread.messages.push({
+    id: uuidv4(),
+    role: 'cos',
+    text:
+      'Got it. I mirror decisions from CoS chat onto this board. Full answers land here within a few minutes when I poll — or keep going in Grok Bot and I will sync the card.',
+    at: new Date().toISOString(),
+    clientId: key,
+    autoAck: true,
+  });
   writeJson(CHAT_FILE, data);
   res.status(201).json(msg);
 });
@@ -356,7 +435,7 @@ router.get('/api/tasks', requireApiAccess, (req, res) => {
   res.json({ tasks });
 });
 
-router.post('/api/tasks', requireUiAuth, (req, res) => {
+router.post('/api/tasks', requireApiAccess, (req, res) => {
   const body = req.body || {};
   const title = String(body.title || '').trim();
   const brief = String(body.brief || '').trim();
