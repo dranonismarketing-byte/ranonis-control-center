@@ -103,12 +103,46 @@ function statusFromStage(stage) {
   return STAGE_TO_STATUS[stage] || 'inbox';
 }
 
+function normalizeImageEntry(raw, idx) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const url = String(raw).trim();
+    if (!url) return null;
+    return { id: 'img-' + idx + '-' + url.slice(0, 24), url, status: 'pending', note: '' };
+  }
+  if (typeof raw === 'object') {
+    const url = String(raw.url || raw.href || '').trim();
+    if (!url) return null;
+    const status = ['approved', 'rejected', 'pending'].includes(raw.status) ? raw.status : 'pending';
+    return {
+      id: String(raw.id || ('img-' + idx)),
+      url,
+      status,
+      note: raw.note != null ? String(raw.note) : '',
+    };
+  }
+  return null;
+}
+
+function normalizeImages(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  list.forEach((raw, idx) => {
+    const entry = normalizeImageEntry(raw, idx);
+    if (entry) out.push(entry);
+  });
+  return out;
+}
+
 function publicTask(t) {
   const stage = normalizeStage(t.stage, t.status);
   return {
     ...t,
     stage,
     status: statusFromStage(stage),
+    resultLinks: Array.isArray(t.resultLinks) ? t.resultLinks.map(String) : [],
+    images: normalizeImages(t.images),
+    driveUrl: t.driveUrl != null ? String(t.driveUrl) : '',
   };
 }
 
@@ -240,7 +274,7 @@ function ensureLockedBoardCards() {
   if (!tasks.some((t) => t.id === LOCKED_PT_LINES_ID)) {
     const now = new Date().toISOString();
     const result = [
-      'LOCKED — Possible Training house-permission static lines (on-image).',
+      'Possible Training house-permission lines (for the ad image).',
       'Angle: want indoor handle reps; real ball banned for noise.',
       '',
       '1. Not in the house. Until now.',
@@ -254,11 +288,11 @@ function ensureLockedBoardCards() {
       '9. Loud ball stays outside.',
       '10. Unlock indoor handle work.',
       '',
-      'Next: Donatas makes 10 statics with another AI. Then approve/reject here.',
+      'Next: make 10 ad images, then OK them here.',
     ].join('\n');
     tasks.unshift({
       id: LOCKED_PT_LINES_ID,
-      title: 'PT house-permission — 10 locked static lines',
+      title: 'PT house-permission — 10 ad lines (need your OK)',
       brief:
         'House-permission angle for Possible Training Train At Home Regulation. Short Obvi/IM8-style on-image lines. Research locked. Synced from CoS chat 2026-09-10.',
       clientId: 'impossible-training',
@@ -266,7 +300,7 @@ function ensureLockedBoardCards() {
       priority: 'high',
       stage: 'approve_copy',
       status: 'waiting',
-      progress: 'Lines locked with Donatas. Waiting on copy approval, then 10 static creatives.',
+      progress: 'Lines ready with Donatas. Needs your OK on copy, then 10 ad images.',
       result,
       resultLinks: [],
       example: false,
@@ -293,7 +327,7 @@ function ensureLockedBoardCards() {
   const chatData = readJson(CHAT_FILE, { threads: {} });
   if (!chatData.threads) chatData.threads = {};
   const note =
-    'Board sync: locked 10 PT house-permission static lines are on Impossible Training → Approve copy (Needs you). Chat auto-acks; I poll and reply from CoS. Deep work still fine in Grok Bot — I will mirror decisions here.';
+    'Board note: 10 PT house-permission ad lines are on Impossible Training and need your OK on copy. Send a chat message anytime — I reply when free.';
   for (const key of ['cos', 'impossible-training']) {
     if (!chatData.threads[key] || !Array.isArray(chatData.threads[key].messages)) {
       chatData.threads[key] = { messages: [] };
@@ -453,31 +487,61 @@ router.get('/api/chat', requireApiAccess, (req, res) => {
   res.json({ clientId: key, messages: thread.messages });
 });
 
-router.post('/api/chat', requireUiAuth, (req, res) => {
+router.post('/api/chat', requireApiAccess, (req, res) => {
   const text = String((req.body && req.body.text) || '').trim();
   if (!text) return res.status(400).json({ error: 'text required' });
   const key = chatThreadKey(req.body && req.body.clientId);
   const data = readChat();
   const thread = ensureThread(data, key);
+  const now = new Date().toISOString();
   const msg = {
     id: uuidv4(),
     role: 'user',
     text,
-    at: new Date().toISOString(),
+    at: now,
     clientId: key,
+    awaitingCos: true,
   };
   thread.messages.push(msg);
+  // Clear status bubble — honest waiting state, not a fake CoS answer
   thread.messages.push({
     id: uuidv4(),
-    role: 'cos',
-    text:
-      'Got it. I mirror decisions from CoS chat onto this board. Full answers land here within a few minutes when I poll — or keep going in Grok Bot and I will sync the card.',
-    at: new Date().toISOString(),
+    role: 'status',
+    text: 'Sent — waiting for a reply',
+    at: now,
     clientId: key,
-    autoAck: true,
+    forMessageId: msg.id,
   });
   writeJson(CHAT_FILE, data);
-  res.status(201).json(msg);
+  res.status(201).json({ message: msg, messages: thread.messages });
+});
+
+/** Unanswered user messages for CoS / Grok Bot to poll and reply to */
+router.get('/api/chat/pending', requireApiAccess, (_req, res) => {
+  const data = readChat();
+  const pending = [];
+  for (const [threadId, thread] of Object.entries(data.threads || {})) {
+    const msgs = Array.isArray(thread.messages) ? thread.messages : [];
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i];
+      if (!m || m.role !== 'user') continue;
+      const later = msgs.slice(i + 1);
+      const answered = later.some(
+        (x) => x && x.role === 'cos' && !x.autoAck && !x.status
+      );
+      if (!answered) {
+        pending.push({
+          id: m.id,
+          text: m.text,
+          at: m.at,
+          clientId: threadId,
+          threadId,
+        });
+      }
+    }
+  }
+  pending.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  res.json({ pending });
 });
 
 router.post('/api/chat/reply', requireApiAccess, (req, res) => {
@@ -486,12 +550,28 @@ router.post('/api/chat/reply', requireApiAccess, (req, res) => {
   const key = chatThreadKey(req.body && req.body.clientId);
   const data = readChat();
   const thread = ensureThread(data, key);
+  const replyToId = req.body && req.body.replyToId ? String(req.body.replyToId) : null;
+
+  // Mark unanswered user msgs as answered; drop "waiting" status bubbles
+  thread.messages = thread.messages.filter((m) => {
+    if (m && m.role === 'status' && String(m.text || '').startsWith('Sent')) {
+      if (!replyToId || m.forMessageId === replyToId) return false;
+    }
+    return true;
+  });
+  for (const m of thread.messages) {
+    if (m.role !== 'user') continue;
+    if (replyToId && m.id !== replyToId) continue;
+    if (m.awaitingCos) m.awaitingCos = false;
+  }
+
   const msg = {
     id: uuidv4(),
     role: 'cos',
     text,
     at: new Date().toISOString(),
     clientId: key,
+    replyToId: replyToId || undefined,
   };
   thread.messages.push(msg);
   writeJson(CHAT_FILE, data);
@@ -562,7 +642,9 @@ router.post('/api/tasks', requireApiAccess, (req, res) => {
     stage,
     status: statusFromStage(stage),
     result: '',
-    resultLinks: [],
+    resultLinks: Array.isArray(body.resultLinks) ? body.resultLinks.map(String) : [],
+    images: normalizeImages(body.images),
+    driveUrl: body.driveUrl != null ? String(body.driveUrl).trim() : '',
     progress: body.progress != null ? String(body.progress) : '',
     priority: body.priority ? String(body.priority).toLowerCase() : 'medium',
     createdAt: now,
@@ -611,6 +693,12 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
     task.resultLinks = Array.isArray(body.resultLinks)
       ? body.resultLinks.map(String)
       : [];
+  }
+  if (body.images !== undefined) {
+    task.images = normalizeImages(body.images);
+  }
+  if (body.driveUrl !== undefined) {
+    task.driveUrl = String(body.driveUrl || '').trim();
   }
   if (body.title !== undefined) task.title = String(body.title).trim();
   if (body.brief !== undefined) task.brief = String(body.brief).trim();
@@ -689,6 +777,8 @@ router.post('/api/delegate', requireUiAuth, (req, res) => {
     status: statusFromStage(stage),
     result: '',
     resultLinks: [],
+    images: [],
+    driveUrl: '',
     progress: '',
     priority: 'medium',
     createdAt: now,

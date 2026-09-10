@@ -14,7 +14,7 @@
 
   const COLUMN_LABELS = {
     inbox: 'Inbox',
-    cooking: 'Cooking',
+    cooking: 'In progress',
     waiting: 'Waiting on you',
     done: 'Done',
   };
@@ -30,12 +30,23 @@
   ];
 
   const STAGE_LABELS = {
-    research: 'Research',
-    copywriting: 'Copywriting',
-    approve_copy: 'Approve copy',
-    static_production: 'Static production',
-    approve_statics: 'Approve statics',
-    drive_upload: 'Drive upload',
+    research: 'In the inbox',
+    copywriting: 'Writing copy',
+    approve_copy: 'Needs your OK on copy',
+    static_production: 'Making ad images',
+    approve_statics: 'Needs your OK on images',
+    drive_upload: 'Uploading',
+    done: 'Done',
+  };
+
+  /** Shorter labels for the ad-steps strip */
+  const STAGE_SHORT_LABELS = {
+    research: 'Inbox',
+    copywriting: 'Writing',
+    approve_copy: 'OK copy',
+    static_production: 'Ad images',
+    approve_statics: 'OK images',
+    drive_upload: 'Upload',
     done: 'Done',
   };
 
@@ -122,6 +133,17 @@
     return STAGE_LABELS[stage] || stage;
   }
 
+  function stageShortLabel(stage) {
+    return STAGE_SHORT_LABELS[stage] || stageLabel(stage);
+  }
+
+  /** One-line plain status for cards (creative uses stage; others use column). */
+  function cardStatusLine(t) {
+    if (isCreativeTask(t)) return stageLabel(normalizeStage(t));
+    const col = columnForTask(t);
+    return COLUMN_LABELS[col] || col;
+  }
+
   function isCreativeTask(t) {
     if (!t) return false;
     if (t.clientId === 'ad-factory') return true;
@@ -136,6 +158,49 @@
 
   function chatClientId() {
     return state.currentClientId === 'my-plate' ? 'cos' : state.currentClientId;
+  }
+
+  function isLikelyImageUrl(url) {
+    const u = String(url || '').trim();
+    if (!u) return false;
+    if (/^data:image\//i.test(u)) return true;
+    if (/\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i.test(u)) return true;
+    if (/googleusercontent\.com|imgur\.com|cloudinary\.com|cdn\.|images\./i.test(u)) return true;
+    return false;
+  }
+
+  /** Merge images[] with image-looking resultLinks (by URL). */
+  function collectTaskImages(t) {
+    const byUrl = new Map();
+    const push = (raw, idx) => {
+      if (raw == null) return;
+      let url = '';
+      let status = 'pending';
+      let id = '';
+      let note = '';
+      if (typeof raw === 'string') {
+        url = raw.trim();
+        id = 'link-' + idx;
+      } else {
+        url = String(raw.url || '').trim();
+        status = ['approved', 'rejected', 'pending'].includes(raw.status) ? raw.status : 'pending';
+        id = String(raw.id || ('img-' + idx));
+        note = raw.note != null ? String(raw.note) : '';
+      }
+      if (!url) return;
+      if (!byUrl.has(url)) byUrl.set(url, { id, url, status, note });
+    };
+    (t.images || []).forEach((img, i) => push(img, i));
+    (t.resultLinks || []).forEach((u, i) => {
+      if (isLikelyImageUrl(u)) push(u, 1000 + i);
+    });
+    return Array.from(byUrl.values());
+  }
+
+  function imageStatusLabel(status) {
+    if (status === 'approved') return 'OK';
+    if (status === 'rejected') return 'Send back';
+    return 'Needs a look';
   }
 
   async function api(path, opts = {}) {
@@ -192,7 +257,7 @@
     state.currentClientId = id;
     $('#board-title').textContent = clientName(id);
     $('#board-eyebrow').textContent = id === 'my-plate' ? 'Home' : 'Client';
-    $('#chat-title').textContent = id === 'my-plate' ? 'CoS chat' : 'Delegate chat';
+    $('#chat-title').textContent = id === 'my-plate' ? 'Chat' : 'Chat';
     $('#chat-sub').textContent = clientName(id);
     renderNav();
     renderBoard();
@@ -219,13 +284,14 @@
     const deleteBtn = opts.showDelete !== false
       ? `<button type="button" class="card-delete" data-delete-id="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>`
       : '';
-    const stageChip = isCreativeTask(t)
-      ? `<span class="${stageChipClass(stage)}">${esc(stageLabel(stage))}</span>`
-      : `<span class="chip">${esc(COLUMN_LABELS[col] || col)}</span>`;
+    const status = cardStatusLine(t);
+    const statusCls = HUMAN_STAGES.has(stage)
+      ? 'card-status human'
+      : (stage === 'done' || col === 'done' ? 'card-status done' : 'card-status');
     return `<div class="card-wrap${compact}">
       <button type="button" class="card" data-task-id="${esc(t.id)}">
+        <p class="${statusCls}">${esc(status)}</p>
         <div class="card-meta">
-          ${stageChip}
           <span class="chip assignee">${esc(t.assignee || 'cos')}</span>
           ${t.clientId && state.currentClientId === 'my-plate' && t.clientId !== 'my-plate'
             ? `<span class="chip">${esc(clientName(t.clientId))}</span>` : ''}
@@ -258,7 +324,7 @@
         : '';
       return `<div class="pipe-step${human}${done}${has}" data-stage="${esc(s)}">
         <span class="pipe-count">${counts[s]}</span>
-        <span class="pipe-label">${esc(stageLabel(s))}</span>
+        <span class="pipe-label">${esc(stageShortLabel(s))}</span>
       </div>${arrow}`;
     }).join('');
   }
@@ -296,7 +362,7 @@
     }
     const stageBits = creativeTotal
       ? PIPELINE_STAGES.filter((s) => stageCounts[s] > 0)
-          .map((s) => `<span class="overview-pill stage">${esc(stageLabel(s))} ${stageCounts[s]}</span>`)
+          .map((s) => `<span class="overview-pill stage">${esc(stageShortLabel(s))} ${stageCounts[s]}</span>`)
           .join('')
       : '';
 
@@ -307,11 +373,11 @@
         <span class="overview-value${needs ? ' warn' : ''}">${needs}</span>
       </div>
       <div class="overview-block grow">
-        <span class="overview-label">Active by client</span>
+        <span class="overview-label">Open work by client</span>
         <div class="overview-pills">${clientBits || '<span class="muted small">Nothing active</span>'}</div>
       </div>
       ${creativeTotal ? `<div class="overview-block grow">
-        <span class="overview-label">Creative stages</span>
+        <span class="overview-label">Ad work</span>
         <div class="overview-pills">${stageBits}</div>
       </div>` : ''}
     `;
@@ -382,8 +448,16 @@
       return;
     }
     chatList.innerHTML = messages.map((m) => {
-      const who = m.role === 'cos' ? 'CoS' : 'You';
-      return `<article class="bubble ${esc(m.role)}"><span class="meta">${esc(who)} · ${esc(fmt(m.at))}</span>${esc(m.text)}</article>`;
+      if (m.role === 'status' || m.autoAck) {
+        // Never present auto-ack as a real CoS answer
+        const label = m.role === 'status' ? m.text : 'Sent — waiting for a reply';
+        return `<div class="bubble status" role="status">${esc(label)}</div>`;
+      }
+      const who = m.role === 'cos' ? 'Reply' : 'You';
+      const waiting = m.role === 'user' && m.awaitingCos
+        ? ' <span class="awaiting">· waiting for a reply</span>'
+        : '';
+      return `<article class="bubble ${esc(m.role)}"><span class="meta">${esc(who)} · ${esc(fmt(m.at))}${waiting}</span>${esc(m.text)}</article>`;
     }).join('');
     chatList.scrollTop = chatList.scrollHeight;
   }
@@ -411,10 +485,89 @@
         ? '<span class="pipe-arrow" aria-hidden="true">→</span>'
         : '';
       return `<div class="pipe-step${human}${done}${cur}" data-stage="${esc(s)}">
-        <span class="pipe-label">${esc(stageLabel(s))}</span>
+        <span class="pipe-label">${esc(stageShortLabel(s))}</span>
       </div>${arrow}`;
     }).join('');
     wrap.hidden = false;
+  }
+
+  function renderModalGallery(t, stage) {
+    const wrap = $('#modal-gallery-wrap');
+    const gallery = $('#modal-gallery');
+    const images = collectTaskImages(t);
+    if (!images.length) {
+      wrap.hidden = true;
+      gallery.innerHTML = '';
+      return;
+    }
+    wrap.hidden = false;
+    // Per-image OK / Send back on image-work stages (dogfood: must be visible, not image-only)
+    const reviewable = stage === 'approve_statics' || stage === 'static_production';
+    $('#modal-gallery-hint').textContent = reviewable
+      ? 'OK or send back each ad image here — no need to leave.'
+      : 'Ad images on this card. Per-image OK shows when they are ready for your look.';
+    gallery.innerHTML = images.map((img) => {
+      const st = imageStatusLabel(img.status);
+      const key = esc(img.id || img.url);
+      const actions = reviewable
+        ? `<div class="img-actions" data-review="1">
+            <button type="button" class="btn primary small-btn" data-img-action="approved" data-img-key="${key}">OK</button>
+            <button type="button" class="btn ghost small-btn" data-img-action="rejected" data-img-key="${key}">Send back</button>
+          </div>`
+        : '';
+      return `<figure class="img-card status-${esc(img.status)}" data-img-id="${key}">
+        <a href="${esc(img.url)}" target="_blank" rel="noopener" class="img-thumb-wrap">
+          <img src="${esc(img.url)}" alt="Ad image" loading="lazy" />
+        </a>
+        <figcaption>
+          <span class="img-status">${esc(st)}</span>
+          ${actions}
+        </figcaption>
+      </figure>`;
+    }).join('');
+
+    gallery.querySelectorAll('[data-img-action]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = btn.dataset.imgKey;
+        const status = btn.dataset.imgAction;
+        setImageStatus(key, status);
+      });
+    });
+  }
+
+  function renderModalDrive(t) {
+    const url = (t.driveUrl || '').trim();
+    const view = $('#modal-drive-view');
+    const edit = $('#modal-drive-edit');
+    const addBtn = $('#modal-drive-add-btn');
+    edit.hidden = true;
+    if (url) {
+      view.hidden = false;
+      addBtn.hidden = true;
+      const a = $('#modal-drive-link');
+      a.href = url;
+      a.textContent = 'Open Google Drive folder';
+    } else {
+      view.hidden = true;
+      addBtn.hidden = false;
+    }
+  }
+
+  async function setImageStatus(key, status) {
+    const t = state.taskById.get(state.currentTaskId);
+    if (!t) return;
+    const images = collectTaskImages(t).map((img) => {
+      const match = img.id === key || img.url === key;
+      return match ? { ...img, status } : { ...img };
+    });
+    await patchCurrentTask({ images });
+    const updated = state.taskById.get(state.currentTaskId);
+    if (updated) {
+      renderModalGallery(updated, normalizeStage(updated));
+      flashModalOk(status === 'approved' ? 'Marked image OK' : 'Marked image to send back');
+    }
   }
 
   function openTask(id) {
@@ -455,20 +608,25 @@
     }
 
     const resWrap = $('#modal-result-wrap');
-    const hasDeliverable = !!(t.result || (t.resultLinks && t.resultLinks.length));
-    const showDeliverable = hasDeliverable && (HUMAN_STAGES.has(stage) || col === 'waiting' || col === 'done' || stage === 'drive_upload');
+    const images = collectTaskImages(t);
+    const nonImageLinks = (t.resultLinks || []).filter((u) => !isLikelyImageUrl(u));
+    const hasDeliverable = !!(t.result || nonImageLinks.length);
+    const showDeliverable = hasDeliverable && (
+      HUMAN_STAGES.has(stage) || col === 'waiting' || col === 'done' ||
+      stage === 'drive_upload' || stage === 'copywriting' || stage === 'static_production'
+    );
     if (showDeliverable) {
       resWrap.hidden = false;
       const label = $('#modal-result-label');
       if (label) {
         label.textContent = HUMAN_STAGES.has(stage) || col === 'waiting'
-          ? 'What you are approving'
+          ? 'Please check this'
           : col === 'done'
             ? 'Result'
-            : 'Deliverable';
+            : 'Work so far';
       }
       $('#modal-result').textContent = t.result || '';
-      $('#modal-links').innerHTML = (t.resultLinks || [])
+      $('#modal-links').innerHTML = nonImageLinks
         .map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`)
         .join('');
     } else {
@@ -477,6 +635,9 @@
       $('#modal-links').innerHTML = '';
     }
 
+    renderModalGallery(t, stage);
+    renderModalDrive(t);
+
     $('#modal-feedback-wrap').hidden = true;
     $('#modal-feedback').value = '';
     const ok = $('#modal-action-ok');
@@ -484,9 +645,37 @@
     ok.textContent = '';
 
     const isHuman = HUMAN_STAGES.has(stage);
-    $('#task-approve-btn').hidden = !isHuman;
-    $('#task-reject-btn').hidden = !isHuman;
-    $('#task-feedback-btn').hidden = !isHuman;
+    const approveBtn = $('#task-approve-btn');
+    const rejectBtn = $('#task-reject-btn');
+    const feedbackBtn = $('#task-feedback-btn');
+    const readyBtn = $('#task-ready-btn');
+
+    approveBtn.hidden = !isHuman;
+    rejectBtn.hidden = !isHuman;
+    feedbackBtn.hidden = !isHuman;
+
+    if (stage === 'approve_copy') {
+      approveBtn.textContent = 'Approve copy → make statics';
+      rejectBtn.textContent = 'Send back to writing';
+    } else if (stage === 'approve_statics') {
+      approveBtn.textContent = 'Approve images → upload';
+      rejectBtn.textContent = 'Send back to image work';
+    } else {
+      approveBtn.textContent = 'Approve';
+      rejectBtn.textContent = 'Send back';
+    }
+
+    // Optional: writing / image work with a result ready for human OK
+    const canReadyCopy = stage === 'copywriting' && !!(t.result || (t.resultLinks && t.resultLinks.length));
+    const canReadyStatics = stage === 'static_production' && !!(t.result || (t.resultLinks && t.resultLinks.length) || images.length);
+    if (canReadyCopy || canReadyStatics) {
+      readyBtn.hidden = false;
+      readyBtn.textContent = 'Ready for my review';
+      readyBtn.dataset.nextStage = canReadyCopy ? 'approve_copy' : 'approve_statics';
+    } else {
+      readyBtn.hidden = true;
+      readyBtn.dataset.nextStage = '';
+    }
 
     $('#task-modal').showModal();
   }
@@ -551,6 +740,13 @@
     const data = await api('/api/chat?clientId=' + encodeURIComponent(cid));
     state.messages = data.messages || [];
     renderChat(state.messages);
+    const last = state.messages[state.messages.length - 1];
+    if (last && (last.role === 'status' || (last.role === 'user' && last.awaitingCos))) {
+      setChatStatus('Sent — waiting for a reply');
+    } else {
+      setChatStatus('');
+    }
+    setChatError('');
   }
 
   async function refresh() {
@@ -562,17 +758,76 @@
     location.href = BASE + '/login';
   });
 
+  function setChatError(msg) {
+    const err = $('#chat-error');
+    if (!err) return;
+    if (!msg) {
+      err.hidden = true;
+      err.textContent = '';
+      return;
+    }
+    err.textContent = msg;
+    err.hidden = false;
+  }
+
+  function setChatStatus(msg) {
+    const el = $('#chat-status');
+    if (!el) return;
+    if (!msg) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
   $('#chat-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const ta = $('#chat-text');
+    const sendBtn = $('#chat-send-btn') || e.target.querySelector('[type="submit"]');
     const text = ta.value.trim();
     if (!text) return;
+    setChatError('');
+    setChatStatus('Sending…');
+    if (sendBtn) sendBtn.disabled = true;
+    const clientId = chatClientId();
+    // Optimistic: show your message + waiting line immediately
+    const optimistic = {
+      id: 'tmp-' + Date.now(),
+      role: 'user',
+      text,
+      at: new Date().toISOString(),
+      awaitingCos: true,
+    };
+    const optimisticStatus = {
+      id: 'tmp-status-' + Date.now(),
+      role: 'status',
+      text: 'Sent — waiting for a reply',
+      at: optimistic.at,
+    };
+    renderChat([...(state.messages || []), optimistic, optimisticStatus]);
     ta.value = '';
-    await api('/api/chat', {
-      method: 'POST',
-      body: JSON.stringify({ text, clientId: chatClientId() }),
-    });
-    await loadChat();
+    try {
+      const data = await api('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({ text, clientId }),
+      });
+      if (Array.isArray(data.messages)) {
+        state.messages = data.messages;
+        renderChat(state.messages);
+      } else {
+        await loadChat();
+      }
+      setChatStatus('Sent — waiting for a reply');
+    } catch (err) {
+      ta.value = text;
+      setChatStatus('');
+      setChatError(err.message || 'Could not send. Try again.');
+      await loadChat().catch(() => {});
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+    }
   });
 
   $('#delegate-this-btn').addEventListener('click', async () => {
@@ -624,6 +879,41 @@
     setTimeout(closeDelegate, 500);
   });
 
+  function showDriveEdit(show) {
+    const t = state.taskById.get(state.currentTaskId);
+    const edit = $('#modal-drive-edit');
+    const view = $('#modal-drive-view');
+    const addBtn = $('#modal-drive-add-btn');
+    if (show) {
+      edit.hidden = false;
+      view.hidden = true;
+      addBtn.hidden = true;
+      $('#modal-drive-input').value = (t && t.driveUrl) || '';
+      $('#modal-drive-input').focus();
+    } else if (t) {
+      renderModalDrive(t);
+    }
+  }
+
+  $('#modal-drive-add-btn').addEventListener('click', () => showDriveEdit(true));
+  $('#modal-drive-edit-btn').addEventListener('click', () => showDriveEdit(true));
+  $('#modal-drive-cancel-btn').addEventListener('click', () => {
+    const t = state.taskById.get(state.currentTaskId);
+    if (t) renderModalDrive(t);
+    else showDriveEdit(false);
+  });
+  $('#modal-drive-save-btn').addEventListener('click', async () => {
+    const url = $('#modal-drive-input').value.trim();
+    try {
+      await patchCurrentTask({ driveUrl: url });
+      const updated = state.taskById.get(state.currentTaskId);
+      if (updated) renderModalDrive(updated);
+      flashModalOk(url ? 'Google Drive folder saved' : 'Drive link cleared');
+    } catch (err) {
+      flashModalOk(err.message || 'Could not save Drive link');
+    }
+  });
+
   $('#task-modal-close').addEventListener('click', closeTaskModal);
 
   $('#task-approve-btn').addEventListener('click', async () => {
@@ -634,10 +924,10 @@
     let note;
     if (stage === 'approve_copy') {
       next = 'static_production';
-      note = 'Copy approved → static production';
+      note = 'Copy OK — now making statics';
     } else if (stage === 'approve_statics') {
       next = 'drive_upload';
-      note = 'Statics approved → drive upload (stub)';
+      note = 'Images OK — uploading';
     } else {
       return;
     }
@@ -654,13 +944,25 @@
     let note;
     if (stage === 'approve_copy') {
       next = 'copywriting';
-      note = 'Copy rejected → back to copywriting';
+      note = 'Sent back to writing';
     } else if (stage === 'approve_statics') {
       next = 'static_production';
-      note = 'Statics rejected → back to static production';
+      note = 'Sent back to image work';
     } else {
       return;
     }
+    await patchCurrentTask({ stage: next, progress: note });
+    flashModalOk(note);
+    setTimeout(closeTaskModal, 450);
+  });
+
+  $('#task-ready-btn').addEventListener('click', async () => {
+    const btn = $('#task-ready-btn');
+    const next = btn.dataset.nextStage;
+    if (!next || !HUMAN_STAGES.has(next)) return;
+    const note = next === 'approve_copy'
+      ? 'Ready for your OK on copy'
+      : 'Ready for your OK on images';
     await patchCurrentTask({ stage: next, progress: note });
     flashModalOk(note);
     setTimeout(closeTaskModal, 450);

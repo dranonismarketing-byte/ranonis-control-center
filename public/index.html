@@ -59,10 +59,10 @@
           <div id="needs-you-list" class="needs-you-list"></div>
         </section>
 
-        <section id="pipeline-viz" class="pipeline-viz" aria-label="Creative pipeline" hidden>
+        <section id="pipeline-viz" class="pipeline-viz" aria-label="Ad steps" hidden>
           <div class="pipeline-viz-head">
-            <h2>Creative pipeline</h2>
-            <p class="muted small">Ad factory stages — not your personal board</p>
+            <h2>Ad steps</h2>
+            <p class="muted small">Where Ad factory work is — not your whole board</p>
           </div>
           <div id="pipeline-flow" class="pipeline-flow"></div>
         </section>
@@ -77,7 +77,7 @@
           </div>
           <div class="column" data-status="cooking">
             <div class="column-head">
-              <h2>Cooking</h2>
+              <h2>In progress</h2>
               <span class="count" data-count="cooking">0</span>
             </div>
             <div class="column-body" id="col-cooking"></div>
@@ -102,15 +102,17 @@
 
     <aside class="chat-panel" aria-label="Chat">
       <div class="chat-head">
-        <h2 id="chat-title">CoS chat</h2>
-        <p class="muted small" id="chat-sub">CoS replies on poll · board syncs from Grok Bot</p>
+        <h2 id="chat-title">Chat</h2>
+        <p class="muted small" id="chat-sub">Write here — replies when free</p>
       </div>
       <div id="chat-list" class="chat-list"></div>
       <form id="chat-form" class="chat-compose">
-        <textarea id="chat-text" rows="3" placeholder="Message CoS…" required></textarea>
+        <textarea id="chat-text" rows="3" placeholder="Message…" required></textarea>
+        <p id="chat-status" class="chat-status" hidden></p>
+        <p id="chat-error" class="error" hidden></p>
         <div class="compose-actions">
           <button type="button" id="delegate-this-btn" class="btn ghost">Delegate this</button>
-          <button type="submit" class="btn primary">Send</button>
+          <button type="submit" class="btn primary" id="chat-send-btn">Send</button>
         </div>
       </form>
     </aside>
@@ -126,7 +128,7 @@
         <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-stage"></span> · <span id="modal-client"></span></p>
         <div id="modal-stage-track" class="modal-stage-track" hidden></div>
         <div id="modal-pipeline-flow-wrap" class="modal-pipeline-wrap" hidden>
-          <h3>Creative pipeline</h3>
+          <h3>Where this is</h3>
           <div id="modal-pipeline-flow" class="pipeline-flow compact"></div>
         </div>
         <h3>Brief</h3>
@@ -136,12 +138,33 @@
           <pre id="modal-progress" class="block-text"></pre>
         </div>
         <div id="modal-result-wrap" hidden>
-          <h3 id="modal-result-label" class="modal-section-title">What you are approving</h3>
+          <h3 id="modal-result-label" class="modal-section-title">Please check this</h3>
           <pre id="modal-result" class="block-text result"></pre>
           <div id="modal-links"></div>
         </div>
+        <div id="modal-gallery-wrap" class="gallery-wrap" hidden>
+          <h3>Ad images</h3>
+          <p class="muted small" id="modal-gallery-hint">OK or send back each image here — no need to leave.</p>
+          <div id="modal-gallery" class="image-gallery"></div>
+        </div>
+        <div id="modal-drive-wrap" class="drive-wrap">
+          <h3>Google Drive folder</h3>
+          <div id="modal-drive-view" class="drive-view" hidden>
+            <a id="modal-drive-link" href="#" target="_blank" rel="noopener">Open folder</a>
+            <button type="button" class="btn ghost small-btn" id="modal-drive-edit-btn">Change link</button>
+          </div>
+          <div id="modal-drive-edit" class="drive-edit" hidden>
+            <label for="modal-drive-input" class="sr-only">Google Drive folder link</label>
+            <input id="modal-drive-input" type="url" placeholder="Paste Google Drive folder link…" />
+            <div class="drive-edit-actions">
+              <button type="button" class="btn ghost" id="modal-drive-cancel-btn">Cancel</button>
+              <button type="button" class="btn primary" id="modal-drive-save-btn">Save link</button>
+            </div>
+          </div>
+          <button type="button" class="btn ghost" id="modal-drive-add-btn">Add Google Drive folder link</button>
+        </div>
         <div id="modal-feedback-wrap" class="feedback-wrap" hidden>
-          <label for="modal-feedback">Feedback</label>
+          <label for="modal-feedback">Note</label>
           <textarea id="modal-feedback" rows="3" placeholder="Note for the board…"></textarea>
         </div>
         <p id="modal-action-ok" class="ok" hidden></p>
@@ -149,9 +172,10 @@
       <footer class="modal-foot stub-actions">
         <button type="button" class="btn danger-outline" id="task-delete-btn">Delete</button>
         <span class="modal-foot-spacer"></span>
-        <button type="button" class="btn ghost" id="task-reject-btn">Reject</button>
-        <button type="button" class="btn ghost" id="task-feedback-btn">Feedback</button>
-        <button type="button" class="btn primary" id="task-approve-btn">Approve</button>
+        <button type="button" class="btn ghost" id="task-reject-btn" hidden>Send back</button>
+        <button type="button" class="btn ghost" id="task-feedback-btn" hidden>Add a note</button>
+        <button type="button" class="btn primary" id="task-ready-btn" hidden>Ready for my review</button>
+        <button type="button" class="btn primary" id="task-approve-btn" hidden>Approve</button>
       </footer>
     </div>
   </dialog>

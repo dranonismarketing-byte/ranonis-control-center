@@ -419,12 +419,12 @@ input:focus, textarea:focus, select:focus {
   color: var(--text);
 }
 .pipe-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .03em;
+  letter-spacing: 0;
   line-height: 1.25;
+  text-transform: none;
 }
 .pipe-arrow {
   flex: 0 0 auto;
@@ -548,6 +548,19 @@ input:focus, textarea:focus, select:focus {
 .card:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
+}
+.card-status {
+  margin: 0 0 8px;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--accent-dim);
+  line-height: 1.3;
+}
+.card-status.human {
+  color: var(--warn);
+}
+.card-status.done {
+  color: var(--ok);
 }
 .card h3 {
   margin: 0 0 6px;
@@ -706,6 +719,15 @@ input:focus, textarea:focus, select:focus {
   border-radius: 16px;
   box-shadow: var(--shadow);
   overflow: hidden;
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+.modal-body {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .modal-head {
   display: flex;
@@ -713,15 +735,16 @@ input:focus, textarea:focus, select:focus {
   align-items: flex-start;
   gap: 12px;
   padding: 16px 16px 0;
+  flex: 0 0 auto;
 }
 .modal-head h2 { margin: 0; font-size: 1.15rem; }
-.modal-body { padding: 12px 16px 16px; }
 .modal-foot {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
   padding: 0 16px 16px;
+  flex: 0 0 auto;
 }
 .modal-foot-spacer { flex: 1; }
 .meta-row {
@@ -791,6 +814,16 @@ input:focus, textarea:focus, select:focus {
   border-top: 1px solid var(--border);
   padding-top: 12px;
   margin-top: 4px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.stub-actions .btn.primary {
+  font-size: .9rem;
+  padding: 10px 14px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+  max-width: 100%;
 }
 .feedback-wrap { margin-top: 12px; }
 
@@ -834,4 +867,133 @@ input:focus, textarea:focus, select:focus {
   .pipe-step { min-width: 72px; }
   .chat-panel { max-height: none; }
   .modal-foot { flex-wrap: wrap; }
+}
+
+/* ——— Chat waiting / errors ——— */
+.chat-status {
+  margin: 6px 0 0;
+  font-size: .82rem;
+  color: var(--warn);
+  font-weight: 600;
+}
+.bubble.status {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+  font-size: .82rem;
+  text-align: center;
+  padding: 8px 10px;
+  box-shadow: none;
+}
+.bubble .awaiting {
+  color: var(--warn);
+  font-weight: 650;
+}
+
+/* ——— Ad image gallery ——— */
+.gallery-wrap { margin: 14px 0 8px; }
+.gallery-wrap h3 { margin: 0 0 4px; }
+.image-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.img-card {
+  margin: 0;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.img-card.status-approved { border-color: #b7e0c6; }
+.img-card.status-rejected { border-color: #e2b4ae; }
+.img-thumb-wrap {
+  display: block;
+  background: #ddd;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+.img-thumb-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.img-card figcaption {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.img-status {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.img-card.status-approved .img-status { color: var(--ok); }
+.img-card.status-rejected .img-status { color: var(--danger); }
+.img-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.img-actions[data-review="1"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+.img-actions .btn {
+  flex: 1 1 auto;
+  min-width: 64px;
+  justify-content: center;
+}
+.small-btn {
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+.img-card figcaption {
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+}
+
+/* ——— Drive folder ——— */
+.drive-wrap { margin: 14px 0 8px; }
+.drive-wrap h3 { margin: 0 0 8px; }
+.drive-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.drive-view a {
+  color: var(--accent-dim);
+  font-weight: 650;
+}
+.drive-edit input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  margin-bottom: 8px;
+}
+.drive-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
