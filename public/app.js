@@ -116,8 +116,8 @@
     const progress = t.progress
       ? `<div class="progress">${esc(preview(t.progress, 100))}</div>`
       : '';
-    const result = t.status === 'done' && t.result
-      ? `<div class="result-preview">${esc(preview(t.result, 120))}</div>`
+    const result = t.result && (t.status === 'done' || t.status === 'waiting')
+      ? `<div class="result-preview">${esc(preview(t.result, 160))}</div>`
       : '';
     return `<button type="button" class="card" data-task-id="${esc(t.id)}">
       <div class="card-meta">
@@ -182,8 +182,17 @@
     }
 
     const resWrap = $('#modal-result-wrap');
-    if (t.status === 'done' && (t.result || (t.resultLinks && t.resultLinks.length))) {
+    const hasDeliverable = !!(t.result || (t.resultLinks && t.resultLinks.length));
+    if (hasDeliverable) {
       resWrap.hidden = false;
+      const label = $('#modal-result-label');
+      if (label) {
+        label.textContent = t.status === 'waiting'
+          ? 'What you are approving'
+          : t.status === 'done'
+            ? 'Result'
+            : 'Deliverable';
+      }
       $('#modal-result').textContent = t.result || '';
       $('#modal-links').innerHTML = (t.resultLinks || [])
         .map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`)
