@@ -4,74 +4,148 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Control Centre</title>
+  <script>
+    (function () {
+      var path = location.pathname.replace(/\/$/, '');
+      var base = '/control-centre';
+      if (path.endsWith('/control-centre')) base = path;
+      else {
+        var idx = path.lastIndexOf('/control-centre');
+        if (idx >= 0) base = path.slice(0, idx + '/control-centre'.length);
+      }
+      document.write('<base href="' + base + '/">');
+      window.__CC_BASE__ = base;
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">Ranonis &amp; Partners</p>
-      <h1>Control Centre</h1>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Clients">
+      <div class="sidebar-brand">
+        <span class="logo-mark">CC</span>
+        <div>
+          <p class="eyebrow">Ranonis</p>
+          <strong>Control Centre</strong>
+        </div>
+      </div>
+      <nav id="client-nav" class="client-nav"></nav>
+      <div class="sidebar-foot">
+        <button type="button" id="logout-btn" class="btn ghost block">Sign out</button>
+      </div>
+    </aside>
+
+    <div class="main-col">
+      <header class="board-header">
+        <div>
+          <p class="eyebrow" id="board-eyebrow">Board</p>
+          <h1 id="board-title">My plate</h1>
+        </div>
+        <div class="header-actions">
+          <button type="button" id="delegate-open-btn" class="btn primary">Delegate</button>
+        </div>
+      </header>
+
+      <section class="kanban" aria-label="Kanban board">
+        <div class="column" data-status="inbox">
+          <div class="column-head">
+            <h2>Inbox</h2>
+            <span class="count" data-count="inbox">0</span>
+          </div>
+          <div class="column-body" id="col-inbox"></div>
+        </div>
+        <div class="column" data-status="cooking">
+          <div class="column-head">
+            <h2>Cooking</h2>
+            <span class="count" data-count="cooking">0</span>
+          </div>
+          <div class="column-body" id="col-cooking"></div>
+        </div>
+        <div class="column" data-status="waiting">
+          <div class="column-head">
+            <h2>Waiting on you</h2>
+            <span class="count" data-count="waiting">0</span>
+          </div>
+          <div class="column-body" id="col-waiting"></div>
+        </div>
+        <div class="column" data-status="done">
+          <div class="column-head">
+            <h2>Done</h2>
+            <span class="count" data-count="done">0</span>
+          </div>
+          <div class="column-body" id="col-done"></div>
+        </div>
+      </section>
     </div>
-    <button type="button" id="logout-btn" class="btn ghost">Sign out</button>
-  </header>
 
-  <nav class="tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="chat">Chat with CoS</button>
-    <button type="button" class="tab" data-tab="delegate">Delegate</button>
-    <button type="button" class="tab" data-tab="cooking">Cooking</button>
-    <button type="button" class="tab" data-tab="results">Results</button>
-  </nav>
-
-  <main>
-    <section id="panel-chat" class="panel active" aria-label="Chat with Chief of Staff">
-      <div class="panel-head">
-        <h2>Chat with Chief of Staff</h2>
-        <p class="muted">Messages land in a queue. CoS answers back into this board — not live streaming.</p>
+    <aside class="chat-panel" aria-label="Chat">
+      <div class="chat-head">
+        <h2 id="chat-title">CoS chat</h2>
+        <p class="muted small" id="chat-sub">My plate</p>
       </div>
       <div id="chat-list" class="chat-list"></div>
-      <form id="chat-form" class="compose">
-        <textarea id="chat-text" rows="3" placeholder="Message the CoS…" required></textarea>
-        <button type="submit" class="btn primary">Send</button>
+      <form id="chat-form" class="chat-compose">
+        <textarea id="chat-text" rows="3" placeholder="Message CoS…" required></textarea>
+        <div class="compose-actions">
+          <button type="button" id="delegate-this-btn" class="btn ghost">Delegate this</button>
+          <button type="submit" class="btn primary">Send</button>
+        </div>
       </form>
-    </section>
+    </aside>
+  </div>
 
-    <section id="panel-delegate" class="panel" aria-label="Delegate">
-      <div class="panel-head">
-        <h2>Delegate</h2>
-        <p class="muted">Creates a queued task. CoS picks it up and moves it to Cooking, then Results.</p>
+  <dialog id="task-modal" class="modal">
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2 id="modal-title">Task</h2>
+        <button type="button" class="btn ghost icon" id="task-modal-close" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="meta-row"><span id="modal-assignee"></span> · <span id="modal-status"></span> · <span id="modal-client"></span></p>
+        <h3>Brief</h3>
+        <pre id="modal-brief" class="block-text"></pre>
+        <div id="modal-progress-wrap" hidden>
+          <h3>Progress</h3>
+          <pre id="modal-progress" class="block-text"></pre>
+        </div>
+        <div id="modal-result-wrap" hidden>
+          <h3>Result</h3>
+          <pre id="modal-result" class="block-text result"></pre>
+          <div id="modal-links"></div>
+        </div>
+        <div id="modal-feedback-wrap" class="feedback-wrap" hidden>
+          <label for="modal-feedback">Feedback</label>
+          <textarea id="modal-feedback" rows="3" placeholder="Note for the board…"></textarea>
+        </div>
+        <p id="modal-action-ok" class="ok" hidden></p>
       </div>
-      <form id="delegate-form" class="card form-stack">
+      <footer class="modal-foot stub-actions">
+        <button type="button" class="btn ghost" id="task-reject-btn">Reject</button>
+        <button type="button" class="btn ghost" id="task-feedback-btn">Feedback</button>
+        <button type="button" class="btn primary" id="task-approve-btn">Approve</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="delegate-modal" class="modal">
+    <form id="delegate-form" class="modal-card">
+      <header class="modal-head">
+        <h2>Delegate</h2>
+        <button type="button" class="btn ghost icon" id="delegate-close-btn" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body form-stack">
         <label for="task-title">Title</label>
-        <input id="task-title" required maxlength="160" placeholder="Short name for the job" />
+        <input id="task-title" maxlength="160" placeholder="Short name (optional — first line used if empty)" />
         <label for="task-brief">Brief</label>
         <textarea id="task-brief" rows="6" required placeholder="What done looks like, constraints, links…"></textarea>
-        <label for="task-priority">Priority</label>
-        <select id="task-priority">
-          <option value="high">High</option>
-          <option value="medium" selected>Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <button type="submit" class="btn primary">Queue task</button>
         <p id="delegate-ok" class="ok" hidden></p>
-      </form>
-    </section>
-
-    <section id="panel-cooking" class="panel" aria-label="Cooking">
-      <div class="panel-head">
-        <h2>Cooking</h2>
-        <p class="muted">Queued and in progress. Nothing here is finished yet.</p>
       </div>
-      <div id="cooking-list" class="task-list"></div>
-    </section>
-
-    <section id="panel-results" class="panel" aria-label="Results">
-      <div class="panel-head">
-        <h2>Results</h2>
-        <p class="muted">Done work with the answer. Example pilot items are marked.</p>
-      </div>
-      <div id="results-list" class="task-list"></div>
-    </section>
-  </main>
+      <footer class="modal-foot">
+        <button type="button" class="btn ghost" id="delegate-cancel-btn">Cancel</button>
+        <button type="submit" class="btn primary">Put on plate</button>
+      </footer>
+    </form>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

@@ -4,24 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Control Centre — Sign in</title>
+  <script>
+    (function () {
+      var path = location.pathname.replace(/\/login\/?$/, '').replace(/\/$/, '');
+      var base = path || '/control-centre';
+      document.write('<base href="' + base + '/">');
+      window.__CC_BASE__ = base;
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="login-body">
   <main class="login-card">
     <p class="eyebrow">Ranonis &amp; Partners</p>
     <h1>Control Centre</h1>
-    <p class="muted">Password gate. Same door the CoS uses from the board.</p>
+    <p class="muted">Sign in to your plate — clients, cooking, and CoS chat.</p>
     <form id="login-form">
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
-      <button type="submit" class="btn primary">Enter</button>
+      <button type="submit" class="btn primary" style="margin-top:16px;width:100%">Enter</button>
       <p id="login-error" class="error" hidden></p>
     </form>
   </main>
   <script>
-    const BASE = document.querySelector('base')?.href
-      ? new URL(document.querySelector('base').href).pathname.replace(/\/$/, '')
-      : location.pathname.replace(/\/login\/?$/, '') || '/control-centre';
+    const BASE = window.__CC_BASE__ || location.pathname.replace(/\/login\/?$/, '') || '/control-centre';
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = document.getElementById('login-error');
