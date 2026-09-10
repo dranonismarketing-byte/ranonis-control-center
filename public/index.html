@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control Centre</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Ranonis &amp; Partners</p>
+      <h1>Control Centre</h1>
+    </div>
+    <button type="button" id="logout-btn" class="btn ghost">Sign out</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="chat">Chat with CoS</button>
+    <button type="button" class="tab" data-tab="delegate">Delegate</button>
+    <button type="button" class="tab" data-tab="cooking">Cooking</button>
+    <button type="button" class="tab" data-tab="results">Results</button>
+  </nav>
+
+  <main>
+    <section id="panel-chat" class="panel active" aria-label="Chat with Chief of Staff">
+      <div class="panel-head">
+        <h2>Chat with Chief of Staff</h2>
+        <p class="muted">Messages land in a queue. CoS answers back into this board — not live streaming.</p>
+      </div>
+      <div id="chat-list" class="chat-list"></div>
+      <form id="chat-form" class="compose">
+        <textarea id="chat-text" rows="3" placeholder="Message the CoS…" required></textarea>
+        <button type="submit" class="btn primary">Send</button>
+      </form>
+    </section>
+
+    <section id="panel-delegate" class="panel" aria-label="Delegate">
+      <div class="panel-head">
+        <h2>Delegate</h2>
+        <p class="muted">Creates a queued task. CoS picks it up and moves it to Cooking, then Results.</p>
+      </div>
+      <form id="delegate-form" class="card form-stack">
+        <label for="task-title">Title</label>
+        <input id="task-title" required maxlength="160" placeholder="Short name for the job" />
+        <label for="task-brief">Brief</label>
+        <textarea id="task-brief" rows="6" required placeholder="What done looks like, constraints, links…"></textarea>
+        <label for="task-priority">Priority</label>
+        <select id="task-priority">
+          <option value="high">High</option>
+          <option value="medium" selected>Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <button type="submit" class="btn primary">Queue task</button>
+        <p id="delegate-ok" class="ok" hidden></p>
+      </form>
+    </section>
+
+    <section id="panel-cooking" class="panel" aria-label="Cooking">
+      <div class="panel-head">
+        <h2>Cooking</h2>
+        <p class="muted">Queued and in progress. Nothing here is finished yet.</p>
+      </div>
+      <div id="cooking-list" class="task-list"></div>
+    </section>
+
+    <section id="panel-results" class="panel" aria-label="Results">
+      <div class="panel-head">
+        <h2>Results</h2>
+        <p class="muted">Done work with the answer. Example pilot items are marked.</p>
+      </div>
+      <div id="results-list" class="task-list"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control Centre — Sign in</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <p class="eyebrow">Ranonis &amp; Partners</p>
+    <h1>Control Centre</h1>
+    <p class="muted">Password gate. Same door the CoS uses from the board.</p>
+    <form id="login-form">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
+      <button type="submit" class="btn primary">Enter</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </main>
+  <script>
+    const BASE = document.querySelector('base')?.href
+      ? new URL(document.querySelector('base').href).pathname.replace(/\/$/, '')
+      : location.pathname.replace(/\/login\/?$/, '') || '/control-centre';
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = document.getElementById('login-error');
+      err.hidden = true;
+      const password = document.getElementById('password').value;
+      try {
+        const res = await fetch(BASE + '/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          err.textContent = data.error || 'Wrong password';
+          err.hidden = false;
+          return;
+        }
+        location.href = BASE + '/';
+      } catch {
+        err.textContent = 'Could not reach server';
+        err.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>

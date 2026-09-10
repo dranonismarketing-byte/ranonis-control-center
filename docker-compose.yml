@@ -1,0 +1,33 @@
+name: ranonis-control-center
+
+services:
+  control-centre:
+    build: .
+    image: ranonis-control-center:latest
+    container_name: ranonis-control-center
+    restart: unless-stopped
+    environment:
+      PORT: "3080"
+      BASE_PATH: /control-centre
+      CONTROL_CENTRE_PASSWORD: ${CONTROL_CENTRE_PASSWORD}
+      CONTROL_CENTRE_TOKEN: ${CONTROL_CENTRE_TOKEN}
+      DATA_DIR: /app/data
+    volumes:
+      - control_centre_data:/app/data
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=ranonis-control-center_web
+      - traefik.http.routers.ranonis-cc.rule=Host(`ranonisandpartners.com`) && PathPrefix(`/control-centre`)
+      - traefik.http.routers.ranonis-cc.entrypoints=websecure
+      - traefik.http.routers.ranonis-cc.tls.certresolver=letsencrypt
+      - traefik.http.routers.ranonis-cc.priority=100
+      - traefik.http.services.ranonis-cc.loadbalancer.server.port=3080
+
+volumes:
+  control_centre_data:
+
+networks:
+  web:
+    name: ranonis-control-center_web

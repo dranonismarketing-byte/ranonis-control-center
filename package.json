@@ -1,0 +1,19 @@
+{
+  "name": "ranonis-control-center",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ranonis Control Centre — chat with CoS, delegate, cooking, results",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "uuid": "^11.1.0"
+  }
+}
