@@ -98,3 +98,12 @@ curl -s -X POST http://127.0.0.1:3080/control-centre/api/chat/reply \
 - Do **not** touch existing Docker projects on the VPS.
 - Deploy as a **new** project named `ranonis-control-center`.
 - Chat is a polled queue, not live Grok streaming.
+
+## Hermes static bakeoff (after OK copy)
+
+On **OK copy**, cards enter `static_production` and enqueue Hermes kanban bakeoff tasks
+(`don-draper` + `blade`/`press`/`scout`/`mixer`/`arena`) via skill `meta-static-ad-production`.
+See **OPERATING-HERMES.md**. Not Web GPT.
+
+Compose includes sidecar `hermes-bridge` (docker.sock → Hermes container). Same project only.
+

@@ -12,6 +12,7 @@ services:
       CONTROL_CENTRE_PASSWORD: ${CONTROL_CENTRE_PASSWORD}
       CONTROL_CENTRE_TOKEN: ${CONTROL_CENTRE_TOKEN}
       DATA_DIR: /app/data
+      HERMES_CONTAINER: ${HERMES_CONTAINER:-hermes-agent-57r8-hermes-agent-1}
     volumes:
       - control_centre_data:/app/data
     networks:
@@ -24,6 +25,26 @@ services:
       - traefik.http.routers.ranonis-cc.tls.certresolver=letsencrypt
       - traefik.http.routers.ranonis-cc.priority=100
       - traefik.http.services.ranonis-cc.loadbalancer.server.port=3080
+
+  # Same project only — docker-exec into Hermes; never touches other compose stacks.
+  hermes-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.bridge
+    image: ranonis-cc-hermes-bridge:latest
+    container_name: ranonis-cc-hermes-bridge
+    restart: unless-stopped
+    environment:
+      CC_URL: http://control-centre:3080/control-centre
+      CONTROL_CENTRE_TOKEN: ${CONTROL_CENTRE_TOKEN}
+      HERMES_CONTAINER: ${HERMES_CONTAINER:-hermes-agent-57r8-hermes-agent-1}
+      POLL_SECONDS: ${HERMES_BRIDGE_POLL_SECONDS:-30}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - web
+    depends_on:
+      - control-centre
 
 volumes:
   control_centre_data:

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { v4: uuidv4 } = require('uuid');
+const hermesStatic = require('./hermesStatic');
 
 const PORT = Number(process.env.PORT || 3080);
 const BASE_PATH = (process.env.BASE_PATH || '/control-centre').replace(/\/$/, '') || '';
@@ -188,6 +189,61 @@ function sanitizeDriveUrl(url) {
   const u = String(url || '').trim();
   if (!u) return '';
   return isRealDriveUrl(u) ? u : '';
+}
+
+
+/** Mark card for Hermes bakeoff when entering static_production after copy OK. */
+function markHermesEnqueuePending(task, opts = {}) {
+  const mode = opts.mode || task.hermesMode || 'bakeoff';
+  task.hermesMode = mode;
+  task.hermesStatus = 'pending_enqueue';
+  task.hermesAssignees = hermesStatic.assigneesForMode(mode);
+  task.hermesOutputPath = hermesStatic.outputDir(task);
+  if (!Array.isArray(task.hermes_task_ids)) task.hermes_task_ids = [];
+  // Clear stale completion fields on re-enqueue
+  task.hermesLocalOutputs = [];
+  task.hermesTaskSummaries = [];
+  task.hermesError = '';
+  if (!task.progress || /copy ok|making ad images/i.test(String(task.progress))) {
+    task.progress = 'Copy OK — making ad images (Hermes bakeoff queued)';
+  }
+  return task;
+}
+
+/**
+ * Try docker-exec enqueue in-process. If docker sock unavailable, leave pending for bridge.
+ * Never fakes Drive links. Never advances to approve_statics.
+ */
+function tryEnqueueHermesNow(task, opts = {}) {
+  markHermesEnqueuePending(task, opts);
+  const result = hermesStatic.enqueueHermesForTask(task, {
+    mode: task.hermesMode,
+    dispatch: opts.dispatch !== false,
+    dryRun: !!opts.dryRun,
+    initialStatus: opts.initialStatus || null,
+  });
+  if (result.dryRun) {
+    task.hermesStatus = 'dry_run';
+    task.hermesDryRun = result;
+    return result;
+  }
+  if (result.pending) {
+    // Bridge will pick up pending_enqueue
+    return result;
+  }
+  task.hermes_task_ids = result.hermes_task_ids || [];
+  task.hermesOutputPath = result.outputPath || task.hermesOutputPath || '';
+  task.hermesEnqueuedAt = new Date().toISOString();
+  if (result.ok) {
+    task.hermesStatus = 'dispatched';
+    task.hermesError = '';
+    task.progress = 'Making ad images (Hermes bakeoff running)';
+  } else {
+    task.hermesStatus = 'enqueue_failed';
+    task.hermesError = JSON.stringify(result.errors || result.error || 'enqueue failed');
+    task.progress = 'Hermes enqueue failed — CoS to retry';
+  }
+  return result;
 }
 
 function publicTask(t) {
@@ -801,6 +857,7 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'not found' });
   const task = data.tasks[idx];
   const body = req.body || {};
+  const prevStage = normalizeStage(task.stage, task.status);
 
   if (body.stage !== undefined) {
     const stage = normalizeStage(body.stage);
@@ -866,9 +923,63 @@ router.patch('/api/tasks/:id', requireApiAccess, (req, res) => {
     task.priority = String(body.priority).toLowerCase();
   }
 
+  // Hermes bakeoff fields (CoS / bridge). Never invent Drive links here.
+  const hermesKeys = [
+    'hermesStatus',
+    'hermesMode',
+    'hermesError',
+    'hermesOutputPath',
+    'hermesEnqueuedAt',
+    'hermesPollAt',
+  ];
+  for (const key of hermesKeys) {
+    if (body[key] !== undefined) task[key] = body[key] == null ? '' : String(body[key]);
+  }
+  if (body.hermes_task_ids !== undefined) {
+    task.hermes_task_ids = Array.isArray(body.hermes_task_ids)
+      ? body.hermes_task_ids.map(String)
+      : [];
+  }
+  if (body.hermesAssignees !== undefined) {
+    task.hermesAssignees = Array.isArray(body.hermesAssignees)
+      ? body.hermesAssignees.map(String)
+      : [];
+  }
+  if (body.hermesLocalOutputs !== undefined) {
+    task.hermesLocalOutputs = Array.isArray(body.hermesLocalOutputs)
+      ? body.hermesLocalOutputs.map(String)
+      : [];
+  }
+  if (body.hermesTaskSummaries !== undefined) {
+    task.hermesTaskSummaries = Array.isArray(body.hermesTaskSummaries)
+      ? body.hermesTaskSummaries
+      : [];
+  }
+  if (body.hermesDryRun !== undefined) {
+    task.hermesDryRun = body.hermesDryRun;
+  }
+
   // Ensure stage always present
   task.stage = normalizeStage(task.stage, task.status);
   task.status = statusFromStage(task.stage);
+
+  // Copy OK → statics: enqueue Hermes bakeoff (not Web GPT).
+  // Trigger when entering static_production from approve_copy, or explicit hermesEnqueue=true.
+  const enteredStatics =
+    task.stage === 'static_production' &&
+    (prevStage === 'approve_copy' || body.hermesEnqueue === true);
+  const needsEnqueue =
+    enteredStatics &&
+    (!Array.isArray(task.hermes_task_ids) || task.hermes_task_ids.length === 0) &&
+    task.hermesStatus !== 'dispatched' &&
+    task.hermesStatus !== 'running' &&
+    task.hermesStatus !== 'complete';
+  if (needsEnqueue || body.hermesEnqueue === true) {
+    tryEnqueueHermesNow(task, {
+      mode: body.hermesMode || task.hermesMode || 'bakeoff',
+      dispatch: body.hermesDispatch !== false,
+    });
+  }
 
   const violation = truthViolation(task.stage, task.images, task.driveUrl, task.progress);
   if (violation) {
@@ -889,6 +1000,124 @@ router.delete('/api/tasks/:id', requireApiAccess, (req, res) => {
   writeJson(TASKS_FILE, data);
   res.json({ ok: true, deleted: publicTask(removed) });
 });
+
+
+// Manual / retry Hermes bakeoff enqueue (CoS). Prefer after OK copy; safe to re-call with idempotency keys.
+router.post('/api/tasks/:id/hermes-enqueue', requireApiAccess, (req, res) => {
+  const data = readTasks();
+  const idx = data.tasks.findIndex((t) => t.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'not found' });
+  const task = data.tasks[idx];
+  const body = req.body || {};
+  const dryRun = !!body.dryRun;
+  const force = !!body.force;
+
+  if (task.stage !== 'static_production' && !force && !dryRun) {
+    return res.status(400).json({
+      error: 'stage must be static_production (or pass force/dryRun)',
+      stage: task.stage,
+    });
+  }
+
+  if (
+    !force &&
+    !dryRun &&
+    Array.isArray(task.hermes_task_ids) &&
+    task.hermes_task_ids.length &&
+    (task.hermesStatus === 'dispatched' ||
+      task.hermesStatus === 'running' ||
+      task.hermesStatus === 'complete')
+  ) {
+    return res.json({
+      ok: true,
+      skipped: true,
+      reason: 'already enqueued',
+      task: publicTask(task),
+    });
+  }
+
+  if (force && !dryRun) {
+    task.hermes_task_ids = [];
+    task.hermesStatus = '';
+  }
+
+  const result = tryEnqueueHermesNow(task, {
+    mode: body.mode || task.hermesMode || 'bakeoff',
+    dryRun,
+    dispatch: body.dispatch !== false,
+    initialStatus: body.initialStatus || null,
+  });
+
+  if (!dryRun) {
+    task.stage = 'static_production';
+    task.status = statusFromStage(task.stage);
+    task.updatedAt = new Date().toISOString();
+    data.tasks[idx] = task;
+    writeJson(TASKS_FILE, data);
+  }
+
+  res.json({ ok: !!result.ok || !!result.pending || !!result.dryRun, result, task: publicTask(task) });
+});
+
+// Poll Hermes kanban show for cards that have hermes_task_ids; update local paths / status only.
+router.post('/api/hermes/poll', requireApiAccess, (req, res) => {
+  const data = readTasks();
+  const updates = [];
+  for (let i = 0; i < data.tasks.length; i++) {
+    const task = data.tasks[i];
+    if (!Array.isArray(task.hermes_task_ids) || !task.hermes_task_ids.length) continue;
+    if (task.stage !== 'static_production' && task.stage !== 'approve_statics') continue;
+
+    const summaries = [];
+    for (const id of task.hermes_task_ids) {
+      const shown = hermesStatic.showKanbanTask(id);
+      if (shown.ok) summaries.push(hermesStatic.summarizeHermesShow(shown.task));
+      else summaries.push({ id, error: shown.error });
+    }
+    const localPaths = [
+      ...new Set(summaries.flatMap((s) => (s && s.localPaths) || [])),
+    ];
+    const allDone = summaries.length && summaries.every((s) => s && s.completed);
+    const anyBlocked = summaries.some((s) => s && s.blocked);
+    task.hermesTaskSummaries = summaries;
+    task.hermesLocalOutputs = localPaths;
+    task.hermesPollAt = new Date().toISOString();
+    if (allDone) {
+      task.hermesStatus = 'complete';
+      task.progress = localPaths.length
+        ? 'Hermes bakeoff done — local files ready for CoS QC'
+        : 'Hermes bakeoff tasks done — waiting CoS to attach images';
+    } else if (anyBlocked) {
+      task.hermesStatus = 'blocked';
+    } else {
+      task.hermesStatus = 'running';
+      task.progress = 'Making ad images (Hermes bakeoff running)';
+    }
+    // Intentionally do NOT set driveUrl or advance to approve_statics / Waiting.
+    task.updatedAt = new Date().toISOString();
+    data.tasks[i] = task;
+    updates.push({
+      id: task.id,
+      hermesStatus: task.hermesStatus,
+      hermesLocalOutputs: localPaths,
+      summaries,
+    });
+  }
+  if (updates.length) writeJson(TASKS_FILE, data);
+  res.json({ ok: true, updated: updates.length, updates });
+});
+
+router.get('/api/hermes/bakeoff-assignees', requireApiAccess, (_req, res) => {
+  res.json({
+    modeDefault: 'bakeoff',
+    skill: hermesStatic.SKILL,
+    assignees: hermesStatic.BAKEOFF_ASSIGNEES,
+    swipeUrls: hermesStatic.SWIPE_URLS,
+    note:
+      'On OK copy, CC enqueues one Hermes kanban task per assignee (don-draper control + five challengers). Not Web GPT.',
+  });
+});
+
 
 router.post('/api/delegate', requireUiAuth, (req, res) => {
   const body = req.body || {};

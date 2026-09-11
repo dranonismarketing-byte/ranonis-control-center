@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+# Sidecar in the SAME compose project only. Needs docker.sock to exec Hermes.
+RUN apk add --no-cache docker-cli
+
+WORKDIR /app
+COPY hermesStatic.js ./hermesStatic.js
+COPY scripts/hermes-bridge.js ./scripts/hermes-bridge.js
+
+ENV POLL_SECONDS=30 \
+    CC_URL=http://control-centre:3080/control-centre \
+    HERMES_CONTAINER=hermes-agent-57r8-hermes-agent-1
+
+CMD ["node", "scripts/hermes-bridge.js"]
